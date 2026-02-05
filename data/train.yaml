@@ -1,0 +1,11 @@
+# Dataset root directory relative to the yolo directory
+path: /home/hice1/wzhu97/scratch/2026_freeman_bird_behavior/data
+
+# Train/val/test sets: specify directories, *.txt files, or lists
+train: frames/train
+val: frames/train   # OK for a test run; split later if needed
+# test: # Optional path to test images
+
+# Classes 
+names:
+  0: bird
