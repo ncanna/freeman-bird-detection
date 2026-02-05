@@ -14,6 +14,12 @@ python /home/hice1/wzhu97/scratch/2026_freeman_bird_behavior/models/yolo.py \
 --output_dir /home/hice1/wzhu97/scratch/2026_freeman_bird_behavior/output \
 --epochs 5
 
+# Prediction only
+python /home/hice1/wzhu97/scratch/2026_freeman_bird_behavior/models/yolo.py \
+--test_data /home/hice1/wzhu97/scratch/2026_freeman_bird_behavior/data/test/IMG_0163.MP4 \
+--output_dir /home/hice1/wzhu97/scratch/2026_freeman_bird_behavior/output/predict_only \
+--predict_only
+
 '''
 from ultralytics import YOLO
 from ultralytics.utils.plotting import Annotator
@@ -36,10 +42,24 @@ def main():
                         help='Image size is resized to imgsz x imgsz')
     parser.add_argument("--conf", type=float, default=0.25,
                         help='Confidence threshold for inference. Discard predictions with confidence < 0.25 by default')
+    parser.add_argument('--yolo_model', type=str,
+                        default='yolo11n.pt', help='Version of YOLO model to use. Defalt to v11'
+                        help='Path to test image/video/folder (data/test/ or clip.mp4)')
+    parser.add_argument("--predict_only", action='store_true',
+                        help='Predict only, no training. Using default YOLO model without tuning')
     args = parser.parse_args()
 
     # ##### Load a COCO-pretrained YOLO11n model #####
-    model = YOLO("yolo11n.pt")
+    model = YOLO(args.yolo_model)
+
+    # Only predict on the test data, no training
+    if args.predict_only:
+        print('# - Predict only, no training')
+        results = model.predict(args.test_data, project=args.output_dir, 
+                                name='detect', conf=args.conf, save=True)
+        # Or this one?
+        # results = model(args.test_data)
+        return
 
     # ##### Train/fine tune the model #####
     # name='train': The subfolder name for this experiment inside project
