@@ -7,9 +7,9 @@ Annotations are in XML format.
 
 ## Week 2026/02/02
 Tasks
-[x] Copy the repo
-[x] Add personal branch to github repo
-[] Upload at leat one video to train and test folder
-[] Write a YOLO model
-[] Get the YOLO model to run and generate output (although do not have true labels to compare to)
+- [x] Copy the repo
+- [x] Add personal branch to github repo
+- [] Upload at leat one video to train and test folder
+- [] Write a YOLO model
+- [] Get the YOLO model to run and generate output (although do not have true labels to compare to)
 
