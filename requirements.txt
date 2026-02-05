@@ -1,0 +1,17 @@
+matplotlib
+mmcv
+mmdet
+mmengine
+numpy
+opencv-python
+pillow
+pycocotools
+scikit-learn
+seaborn
+timm
+torch
+torchvision
+tqdm
+transformers
+ultralytics
+pathlib
