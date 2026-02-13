@@ -1,29 +1,46 @@
 """
-Utility for visualizing YOLO bird detections on video frames.
+Utility for visualizing bird detections on video frames.
 
-This script extracts frames from videos, runs YOLO detection, and displays
-or saves frames with bounding boxes where birds are detected.
+This script extracts frames from videos, runs YOLO or MegaDetector detection,
+and displays or saves frames with bounding boxes where birds/animals are detected.
 """
 
 from ultralytics import YOLO
+import torch
 import cv2
 import numpy as np
 from pathlib import Path
 import matplotlib.pyplot as plt
 from typing import List, Tuple, Optional
+import urllib.request
 
 
 class BirdDetectionVisualizer:
-    """Visualizes bird detections on video frames using YOLO."""
+    """Visualizes bird/animal detections on video frames using YOLO or MegaDetector."""
 
-    def __init__(self, model_path: str = "yolo11n.pt"):
+    def __init__(self, model_path: str = "yolo11n.pt", model_type: str = "yolo"):
         """
-        Initialize the visualizer with a YOLO model.
+        Initialize the visualizer with a YOLO or MegaDetector model.
 
         Args:
-            model_path: Path to the YOLO model weights file
+            model_path: Path to the model weights file
+            model_type: Type of model - "yolo" or "megadetector"
         """
-        self.model = YOLO(model_path)
+        self.model_type = model_type.lower()
+
+        if self.model_type == "yolo":
+            self.model = YOLO(model_path)
+        elif self.model_type == "megadetector":
+            # Download MegaDetector if path is URL or doesn't exist
+            if model_path.startswith("http"):
+                local_path = Path("md_v5a.0.0.pt")
+                if not local_path.exists():
+                    print(f"Downloading MegaDetector model...")
+                    urllib.request.urlretrieve(model_path, local_path)
+                model_path = str(local_path)
+            self.model = torch.hub.load('ultralytics/yolov5', 'custom', path=model_path)
+        else:
+            raise ValueError(f"Unknown model_type: {model_type}. Use 'yolo' or 'megadetector'")
 
     def extract_frames(self, video_path: Path, frame_interval: int = 30) -> List[Tuple[int, np.ndarray]]:
         """
@@ -56,7 +73,7 @@ class BirdDetectionVisualizer:
 
     def detect_and_draw(self, frame: np.ndarray, confidence_threshold: float = 0.25) -> Tuple[np.ndarray, int]:
         """
-        Run YOLO detection on a frame and draw bounding boxes.
+        Run detection on a frame and draw bounding boxes.
 
         Args:
             frame: Input frame (BGR format from OpenCV)
@@ -65,61 +82,71 @@ class BirdDetectionVisualizer:
         Returns:
             Tuple of (annotated_frame, number_of_detections)
         """
-        # Run inference
-        results = self.model(frame, verbose=False)[0]
-
-        # Get detections
-        boxes = results.boxes
-        detection_count = 0
         annotated_frame = frame.copy()
+        detection_count = 0
 
-        if boxes is not None and len(boxes) > 0:
-            for box in boxes:
-                # Get box coordinates and confidence
-                x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
-                confidence = float(box.conf[0])
-                class_id = int(box.cls[0])
+        if self.model_type == "yolo":
+            # YOLO inference
+            results = self.model(frame, verbose=False)[0]
+            boxes = results.boxes
 
-                if confidence >= confidence_threshold:
-                    detection_count += 1
+            if boxes is not None and len(boxes) > 0:
+                for box in boxes:
+                    x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+                    confidence = float(box.conf[0])
+                    class_id = int(box.cls[0])
 
-                    # Draw bounding box
-                    cv2.rectangle(
-                        annotated_frame,
-                        (int(x1), int(y1)),
-                        (int(x2), int(y2)),
-                        (0, 255, 0),  # Green color
-                        2
-                    )
+                    if confidence >= confidence_threshold:
+                        detection_count += 1
+                        class_name = results.names[class_id] if hasattr(results, 'names') else f"Class {class_id}"
+                        self._draw_box(annotated_frame, int(x1), int(y1), int(x2), int(y2), class_name, confidence)
 
-                    # Get class name
-                    class_name = results.names[class_id] if hasattr(results, 'names') else f"Class {class_id}"
+        elif self.model_type == "megadetector":
+            # MegaDetector inference
+            results = self.model(frame)
+            detections = results.pandas().xyxy[0]
 
-                    # Draw label with confidence
-                    label = f"{class_name}: {confidence:.2f}"
-                    label_size, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
+            # Filter for animals (class 0 in YOLOv5 0-indexed)
+            animals = detections[detections['confidence'] >= confidence_threshold]
 
-                    # Draw label background
-                    cv2.rectangle(
-                        annotated_frame,
-                        (int(x1), int(y1) - label_size[1] - 10),
-                        (int(x1) + label_size[0], int(y1)),
-                        (0, 255, 0),
-                        -1
-                    )
-
-                    # Draw label text
-                    cv2.putText(
-                        annotated_frame,
-                        label,
-                        (int(x1), int(y1) - 5),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.5,
-                        (0, 0, 0),
-                        2
-                    )
+            for _, detection in animals.iterrows():
+                detection_count += 1
+                x1, y1 = int(detection['xmin']), int(detection['ymin'])
+                x2, y2 = int(detection['xmax']), int(detection['ymax'])
+                confidence = detection['confidence']
+                class_name = detection['name'] if 'name' in detection else "Animal"
+                self._draw_box(annotated_frame, x1, y1, x2, y2, class_name, confidence)
 
         return annotated_frame, detection_count
+
+    def _draw_box(self, frame: np.ndarray, x1: int, y1: int, x2: int, y2: int, class_name: str, confidence: float):
+        """Helper method to draw bounding box and label on frame."""
+        # Draw bounding box
+        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
+        # Draw label with confidence
+        label = f"{class_name}: {confidence:.2f}"
+        label_size, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
+
+        # Draw label background
+        cv2.rectangle(
+            frame,
+            (x1, y1 - label_size[1] - 10),
+            (x1 + label_size[0], y1),
+            (0, 255, 0),
+            -1
+        )
+
+        # Draw label text
+        cv2.putText(
+            frame,
+            label,
+            (x1, y1 - 5),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (0, 0, 0),
+            2
+        )
 
     def visualize_video(
         self,
@@ -189,7 +216,8 @@ class BirdDetectionVisualizer:
         rows = (num_frames + cols - 1) // cols
 
         fig, axes = plt.subplots(rows, cols, figsize=(6*cols, 4*rows))
-        fig.suptitle(f"Bird Detections - {video_name}", fontsize=16)
+        model_name = "MegaDetector" if self.model_type == "megadetector" else "YOLO"
+        fig.suptitle(f"{model_name} Detections - {video_name}", fontsize=16)
 
         # Handle single frame case
         if num_frames == 1:
@@ -214,12 +242,11 @@ class BirdDetectionVisualizer:
 
 def main():
     """Example usage of the BirdDetectionVisualizer."""
+    import sys
+
     # Get the directory containing this script
     script_dir = Path(__file__).parent
-
-    # Navigate to project root and find the model
     project_root = script_dir.parent
-    model_path = project_root / "yolo11n.pt"
 
     # Find test video
     test_video = project_root / "data" / "test" / "IMG_2473.MP4"
@@ -228,20 +255,31 @@ def main():
         print(f"Error: Test video not found at {test_video}")
         return
 
-    if not model_path.exists():
-        print(f"Error: Model not found at {model_path}")
-        print("Please ensure yolo11n.pt is in the project root directory")
-        return
+    # Check if user wants MegaDetector or YOLO
+    use_megadetector = len(sys.argv) > 1 and sys.argv[1].lower() == "megadetector"
 
-    # Create visualizer
-    print(f"Loading model from {model_path}")
-    visualizer = BirdDetectionVisualizer(str(model_path))
+    if use_megadetector:
+        # Use MegaDetector
+        print("Using MegaDetector model...")
+        model_url = "https://github.com/microsoft/CameraTraps/releases/download/v5.0/md_v5a.0.0.pt"
+        visualizer = BirdDetectionVisualizer(model_url, model_type="megadetector")
+        output_dir = project_root / "outputs" / "megadetector_visualizations"
+    else:
+        # Use YOLO
+        model_path = project_root / "yolo11n.pt"
+        if not model_path.exists():
+            print(f"Error: Model not found at {model_path}")
+            print("Please ensure yolo11n.pt is in the project root directory")
+            print("\nOr run with 'megadetector' argument to use MegaDetector:")
+            print(f"  python {Path(__file__).name} megadetector")
+            return
+
+        print(f"Using YOLO model from {model_path}")
+        visualizer = BirdDetectionVisualizer(str(model_path), model_type="yolo")
+        output_dir = project_root / "outputs" / "detections"
 
     # Process video
     print(f"\nProcessing video: {test_video.name}")
-
-    # Create output directory
-    output_dir = project_root / "outputs" / "detections"
 
     visualizer.visualize_video(
         video_path=test_video,
