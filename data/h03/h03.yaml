@@ -1,0 +1,15 @@
+# H03 bird detection dataset
+# Source: H03_download1_YOLO (Darknet format), reorganized to Ultralytics format
+# All 27,618 labeled frames are in the train split.
+# Images are not included — populate images/train/ with the corresponding frames.
+
+# Dataset root dir (relative to where YOLO is run, or use absolute path)
+path: data/h03
+
+train: images/train
+val: images/val
+test: images/test
+
+# Classes
+names:
+  0: bird
