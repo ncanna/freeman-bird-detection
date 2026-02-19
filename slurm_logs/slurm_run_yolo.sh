@@ -12,6 +12,6 @@ conda activate bird_behavior
 nvidia-smi
 python /home/hice1/wzhu97/scratch/2026_freeman_bird_behavior/models/yolo.py \
   --train_data /home/hice1/wzhu97/scratch/2026_freeman_bird_behavior/data/train.yaml \
-  --test_data  /home/hice1/wzhu97/scratch/2026_freeman_bird_behavior/data/test/IMG_0163.MP4 \
+  --test_data  /home/hice1/wzhu97/scratch/2026_freeman_bird_behavior/data/test/IMG_0165.MP4 \
   --output_dir /home/hice1/wzhu97/scratch/2026_freeman_bird_behavior/output \
   --epochs 5
