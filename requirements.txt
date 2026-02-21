@@ -1,10 +1,15 @@
+lightning
 matplotlib
 mmdet
 mmengine
+nbformat
 numpy
+omegaconf
 opencv-python
+pathlib
 pillow
 pycocotools
+PytorchWildlife
 scikit-learn
 seaborn
 timm
@@ -13,6 +18,4 @@ torchvision
 tqdm
 transformers
 ultralytics
-pathlib
 wandb
-nbformat
