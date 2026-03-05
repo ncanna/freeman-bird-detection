@@ -12,7 +12,7 @@ pycocotools
 PytorchWildlife
 scikit-learn
 seaborn
-speciesent
+speciesnet
 timm
 torch
 torchvision

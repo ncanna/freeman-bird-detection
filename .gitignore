@@ -1,7 +1,6 @@
 data/african-wildlife
 *.pt
 __pycache__
-data/h03/images
-data/h03/h03_raw_videos
+data
 
 
