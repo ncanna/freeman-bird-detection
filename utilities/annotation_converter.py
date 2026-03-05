@@ -630,7 +630,7 @@ class AnnotationConverter:
         print(f"Output file: {output_path}")
 
     def create_yaml_config(self,
-                          output_path: Union[str, Path],
+                          output_dir: Union[str, Path],
                           dataset_path: str,
                           train_dir: str = "images/train",
                           val_dir: str = "images/val",
@@ -648,7 +648,9 @@ class AnnotationConverter:
             class_mapping: Dictionary mapping class names to class IDs.
                           If None, uses the converter's current class_mapping.
         """
-        output_path = Path(output_path)
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = Path(output_dir / 'yolo.yaml')
         class_map = class_mapping or self.class_mapping
 
         # Create YAML content
