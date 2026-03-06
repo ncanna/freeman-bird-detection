@@ -1,0 +1,39 @@
+{
+  "os":  "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+  "python":  "CPython 3.11.14",
+  "startedAt":  "2026-03-05T07:15:10.463090Z",
+  "program":  "/home/rebecca/birdlab/freeman-bird-detection/models/yolo/yolo.ipynb",
+  "codePath":  "/home/rebecca/birdlab/freeman-bird-detection/models/yolo/yolo.ipynb",
+  "codePathLocal":  "yolo.ipynb",
+  "git":  {
+    "remote":  "https://github.com/ncanna/freeman-bird-detection",
+    "commit":  "83e4d2ff2facd014621298f194213bdfba4ceafd"
+  },
+  "email":  "beccaarivera@gmail.com",
+  "root":  "/home/rebecca/birdlab/freeman-bird-detection/outputs/runs/yolo11_h03_train",
+  "host":  "MalkMachina",
+  "executable":  "/home/rebecca/miniconda3/envs/birdenv/bin/python",
+  "cpu_count":  4,
+  "cpu_count_logical":  8,
+  "gpu":  "NVIDIA GeForce RTX 3070",
+  "gpu_count":  1,
+  "disk":  {
+    "/":  {
+      "total":  "1081101176832",
+      "used":  "93155020800"
+    }
+  },
+  "memory":  {
+    "total":  "10429362176"
+  },
+  "gpu_nvidia":  [
+    {
+      "name":  "NVIDIA GeForce RTX 3070",
+      "memoryTotal":  "8589934592",
+      "architecture":  "Ampere",
+      "uuid":  "GPU-37791534-4adc-d53e-084a-43764a035219"
+    }
+  ],
+  "cudaVersion":  "13.1",
+  "writerId":  "v2qtmnre4ge27wpbf5t23c4ctf9hq476"
+}

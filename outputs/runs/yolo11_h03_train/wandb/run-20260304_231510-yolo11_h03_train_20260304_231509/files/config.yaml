@@ -1,0 +1,405 @@
+_wandb:
+    value:
+        cli_version: 0.25.0
+        e:
+            v2qtmnre4ge27wpbf5t23c4ctf9hq476:
+                codePath: /home/rebecca/birdlab/freeman-bird-detection/models/yolo/yolo.ipynb
+                codePathLocal: yolo.ipynb
+                cpu_count: 4
+                cpu_count_logical: 8
+                cudaVersion: "13.1"
+                disk:
+                    /:
+                        total: "1081101176832"
+                        used: "93155020800"
+                email: beccaarivera@gmail.com
+                executable: /home/rebecca/miniconda3/envs/birdenv/bin/python
+                git:
+                    commit: 83e4d2ff2facd014621298f194213bdfba4ceafd
+                    remote: https://github.com/ncanna/freeman-bird-detection
+                gpu: NVIDIA GeForce RTX 3070
+                gpu_count: 1
+                gpu_nvidia:
+                    - architecture: Ampere
+                      memoryTotal: "8589934592"
+                      name: NVIDIA GeForce RTX 3070
+                      uuid: GPU-37791534-4adc-d53e-084a-43764a035219
+                host: MalkMachina
+                memory:
+                    total: "10429362176"
+                os: Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.35
+                program: /home/rebecca/birdlab/freeman-bird-detection/models/yolo/yolo.ipynb
+                python: CPython 3.11.14
+                root: /home/rebecca/birdlab/freeman-bird-detection/outputs/runs/yolo11_h03_train
+                startedAt: "2026-03-05T07:15:10.463090Z"
+                writerId: v2qtmnre4ge27wpbf5t23c4ctf9hq476
+        m: []
+        python_version: 3.11.14
+        t:
+            "1":
+                - 1
+                - 41
+                - 105
+            "2":
+                - 1
+                - 41
+                - 105
+            "3":
+                - 2
+                - 13
+                - 14
+                - 16
+                - 61
+            "4": 3.11.14
+            "5": 0.25.0
+            "8":
+                - 1
+            "12": 0.25.0
+            "13": linux-x86_64
+        visualize:
+            curves/F1-Confidence(B):
+                panel_config:
+                    fieldSettings:
+                        class: class
+                        x: x
+                        "y": "y"
+                    panelDefId: wandb/area-under-curve/v0
+                    stringSettings:
+                        title: F1-Confidence(B)
+                        x-axis-title: Confidence
+                        y-axis-title: F1
+                    transform:
+                        name: tableWithLeafColNames
+                    userQuery:
+                        queryFields:
+                            - args:
+                                - name: runSets
+                                  value: ${runSets}
+                              fields:
+                                - fields: []
+                                  name: id
+                                - fields: []
+                                  name: name
+                                - fields: []
+                                  name: _defaultColorIndex
+                                - args:
+                                    - name: tableKey
+                                      value: curves/F1-Confidence(B)_table
+                                  fields: []
+                                  name: summaryTable
+                              name: runSets
+                panel_type: Vega2
+            curves/Precision-Confidence(B):
+                panel_config:
+                    fieldSettings:
+                        class: class
+                        x: x
+                        "y": "y"
+                    panelDefId: wandb/area-under-curve/v0
+                    stringSettings:
+                        title: Precision-Confidence(B)
+                        x-axis-title: Confidence
+                        y-axis-title: Precision
+                    transform:
+                        name: tableWithLeafColNames
+                    userQuery:
+                        queryFields:
+                            - args:
+                                - name: runSets
+                                  value: ${runSets}
+                              fields:
+                                - fields: []
+                                  name: id
+                                - fields: []
+                                  name: name
+                                - fields: []
+                                  name: _defaultColorIndex
+                                - args:
+                                    - name: tableKey
+                                      value: curves/Precision-Confidence(B)_table
+                                  fields: []
+                                  name: summaryTable
+                              name: runSets
+                panel_type: Vega2
+            curves/Precision-Recall(B):
+                panel_config:
+                    fieldSettings:
+                        class: class
+                        x: x
+                        "y": "y"
+                    panelDefId: wandb/area-under-curve/v0
+                    stringSettings:
+                        title: Precision-Recall(B)
+                        x-axis-title: Recall
+                        y-axis-title: Precision
+                    transform:
+                        name: tableWithLeafColNames
+                    userQuery:
+                        queryFields:
+                            - args:
+                                - name: runSets
+                                  value: ${runSets}
+                              fields:
+                                - fields: []
+                                  name: id
+                                - fields: []
+                                  name: name
+                                - fields: []
+                                  name: _defaultColorIndex
+                                - args:
+                                    - name: tableKey
+                                      value: curves/Precision-Recall(B)_table
+                                  fields: []
+                                  name: summaryTable
+                              name: runSets
+                panel_type: Vega2
+            curves/Recall-Confidence(B):
+                panel_config:
+                    fieldSettings:
+                        class: class
+                        x: x
+                        "y": "y"
+                    panelDefId: wandb/area-under-curve/v0
+                    stringSettings:
+                        title: Recall-Confidence(B)
+                        x-axis-title: Confidence
+                        y-axis-title: Recall
+                    transform:
+                        name: tableWithLeafColNames
+                    userQuery:
+                        queryFields:
+                            - args:
+                                - name: runSets
+                                  value: ${runSets}
+                              fields:
+                                - fields: []
+                                  name: id
+                                - fields: []
+                                  name: name
+                                - fields: []
+                                  name: _defaultColorIndex
+                                - args:
+                                    - name: tableKey
+                                      value: curves/Recall-Confidence(B)_table
+                                  fields: []
+                                  name: summaryTable
+                              name: runSets
+                panel_type: Vega2
+agnostic_nms:
+    value: false
+amp:
+    value: true
+angle:
+    value: 1
+augment:
+    value: false
+auto_augment:
+    value: randaugment
+batch:
+    value: 16
+bgr:
+    value: 0
+box:
+    value: 7.5
+cache:
+    value: false
+cfg:
+    value: null
+classes:
+    value: null
+close_mosaic:
+    value: 10
+cls:
+    value: 0.5
+compile:
+    value: false
+conf:
+    value: null
+copy_paste:
+    value: 0
+copy_paste_mode:
+    value: flip
+cos_lr:
+    value: false
+cutmix:
+    value: 0
+data:
+    value: /home/rebecca/birdlab/freeman-bird-detection/data/h03/h03.yaml
+degrees:
+    value: 0
+deterministic:
+    value: true
+device:
+    value: null
+dfl:
+    value: 1.5
+dnn:
+    value: false
+dropout:
+    value: 0
+dynamic:
+    value: false
+embed:
+    value: null
+end2end:
+    value: null
+epochs:
+    value: 1
+erasing:
+    value: 0.4
+exist_ok:
+    value: false
+fliplr:
+    value: 0.5
+flipud:
+    value: 0
+format:
+    value: torchscript
+fraction:
+    value: 1
+freeze:
+    value: null
+half:
+    value: false
+hsv_h:
+    value: 0.015
+hsv_s:
+    value: 0.7
+hsv_v:
+    value: 0.4
+imgsz:
+    value: 640
+int8:
+    value: false
+iou:
+    value: 0.7
+keras:
+    value: false
+kobj:
+    value: 1
+line_width:
+    value: null
+lr0:
+    value: 0.01
+lrf:
+    value: 0.01
+mask_ratio:
+    value: 4
+max_det:
+    value: 300
+mixup:
+    value: 0
+mode:
+    value: train
+model:
+    value: yolo11n.pt
+momentum:
+    value: 0.937
+mosaic:
+    value: 1
+multi_scale:
+    value: 0
+name:
+    value: yolo11_h03_train
+nbs:
+    value: 64
+nms:
+    value: false
+opset:
+    value: null
+optimize:
+    value: false
+optimizer:
+    value: auto
+overlap_mask:
+    value: true
+patience:
+    value: 100
+perspective:
+    value: 0
+plots:
+    value: true
+pose:
+    value: 12
+pretrained:
+    value: true
+profile:
+    value: false
+project:
+    value: /home/rebecca/birdlab/freeman-bird-detection/outputs/runs
+rect:
+    value: false
+resume:
+    value: false
+retina_masks:
+    value: false
+rle:
+    value: 1
+save:
+    value: true
+save_conf:
+    value: false
+save_crop:
+    value: false
+save_dir:
+    value: /home/rebecca/birdlab/freeman-bird-detection/outputs/runs/yolo11_h03_train
+save_frames:
+    value: false
+save_json:
+    value: false
+save_period:
+    value: -1
+save_txt:
+    value: false
+scale:
+    value: 0.5
+seed:
+    value: 0
+shear:
+    value: 0
+show:
+    value: false
+show_boxes:
+    value: true
+show_conf:
+    value: true
+show_labels:
+    value: true
+simplify:
+    value: true
+single_cls:
+    value: false
+source:
+    value: null
+split:
+    value: val
+stream_buffer:
+    value: false
+task:
+    value: detect
+time:
+    value: null
+tracker:
+    value: botsort.yaml
+translate:
+    value: 0.1
+val:
+    value: true
+verbose:
+    value: true
+vid_stride:
+    value: 1
+visualize:
+    value: false
+warmup_bias_lr:
+    value: 0.1
+warmup_epochs:
+    value: 3
+warmup_momentum:
+    value: 0.8
+weight_decay:
+    value: 0.0005
+workers:
+    value: 8
+workspace:
+    value: null
