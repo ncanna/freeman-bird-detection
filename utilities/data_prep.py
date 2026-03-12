@@ -1,0 +1,131 @@
+import json
+import re
+import pandas as pd
+from collections import defaultdict
+from sklearn.model_selection import train_test_split
+
+
+
+def compute_split_statistics(coco_json_path: str, bird_category_name: str = "Bird") -> pd.DataFrame:
+    """
+    Compute per-video statistics from a COCO annotation file for use in
+    stratified train/val/test splitting.
+
+    Frame file names are expected to encode the source video, e.g.:
+        IMG_0073_frame_000000.png  →  video "IMG_0073"
+
+    Parameters
+    ----------
+    coco_json_path : str
+        Path to the COCO-format JSON annotation file.
+    bird_category_name : str
+        Category name to treat as "bird". Case-insensitive. Default "Bird".
+
+    Returns
+    -------
+    pd.DataFrame
+        One row per video with columns:
+          - video          : video identifier parsed from the frame filename
+          - n_total_frames : total annotated frames in this video
+          - n_bird_frames  : frames that contain at least one bird annotation
+          - prevalence     : n_bird_frames / n_total_frames
+          - stratum        : quartile bin [0, 3] assigned by pd.qcut on prevalence
+    """
+    with open(coco_json_path) as f:
+        data = json.load(f)
+
+    # Resolve bird category id
+    bird_cat_id = None
+    for cat in data["categories"]:
+        if cat["name"].lower() == bird_category_name.lower():
+            bird_cat_id = cat["id"]
+            break
+    if bird_cat_id is None:
+        raise ValueError(
+            f"Category '{bird_category_name}' not found. "
+            f"Available: {[c['name'] for c in data['categories']]}"
+        )
+
+    # Map image_id → video name
+    image_to_video: dict[int, str] = {}
+    for img in data["images"]:
+        fname = img["file_name"]
+        # Extract video prefix: everything before "_frame_"
+        match = re.match(r"^(.+)_frame_\d+", fname)
+        video = match.group(1) if match else fname
+        image_to_video[img["id"]] = video
+
+    # Collect frames that have at least one bird annotation
+    bird_image_ids: set[int] = set()
+    for ann in data["annotations"]:
+        if ann["category_id"] == bird_cat_id:
+            bird_image_ids.add(ann["image_id"])
+
+    # Aggregate per video
+    video_total: dict[str, set[int]] = defaultdict(set)
+    video_bird: dict[str, set[int]] = defaultdict(set)
+
+    for image_id, video in image_to_video.items():
+        video_total[video].add(image_id)
+        if image_id in bird_image_ids:
+            video_bird[video].add(image_id)
+
+    rows = []
+    for video, frame_ids in video_total.items():
+        n_total = len(frame_ids)
+        n_bird = len(video_bird[video])
+        rows.append(
+            {
+                "video": video,
+                "n_total_frames": n_total,
+                "n_bird_frames": n_bird,
+                "prevalence": n_bird / n_total,
+            }
+        )
+
+    df = pd.DataFrame(rows).sort_values("video").reset_index(drop=True)
+
+    # Bin each video by bird prevalence quartile → use as stratum label
+    prevalence = df["prevalence"].tolist()
+    df["stratum"] = pd.qcut(prevalence, q=4, labels=False, duplicates="drop")
+
+    return df
+
+
+def stratified_video_split(df, train_frac=0.70, val_frac=0.20, test_frac=0.10, random_state=42):
+    assert abs(train_frac + val_frac + test_frac - 1.0) < 1e-6
+
+    train_videos, val_videos, test_videos = [], [], []
+
+    for stratum_id, group in df.groupby("stratum"):
+        videos = group["video"].tolist()
+
+        # First cut: train vs (val+test)
+        train, val_test = train_test_split(
+            videos,
+            test_size=(val_frac + test_frac),
+            random_state=random_state,
+        )
+
+        # Second cut: val vs test
+        relative_test_frac = test_frac / (val_frac + test_frac)
+        val, test = train_test_split(
+            val_test,
+            test_size=relative_test_frac,
+            random_state=random_state,
+        )
+
+        train_videos.extend(train)
+        val_videos.extend(val)
+        test_videos.extend(test)
+
+    return train_videos, val_videos, test_videos
+
+
+def split_report(df, videos, name):
+    sub = df[df["video"].isin(videos)]
+    print(
+        f"{name:6s} | {len(videos):3d} videos | "
+        f"{sub['n_total_frames'].sum():6d} frames | "
+        f"bird prevalence: {sub['prevalence'].mean():.3f} ± {sub['prevalence'].std():.3f}"
+    )
