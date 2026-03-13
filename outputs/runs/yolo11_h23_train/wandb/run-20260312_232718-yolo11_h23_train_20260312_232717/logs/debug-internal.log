@@ -1,0 +1,6 @@
+{"time":"2026-03-12T23:27:24.955611551-04:00","level":"INFO","msg":"stream: starting","core version":"0.25.0"}
+{"time":"2026-03-12T23:27:26.737032235-04:00","level":"INFO","msg":"stream: created new stream","id":"yolo11_h23_train_20260312_232717"}
+{"time":"2026-03-12T23:27:26.738119802-04:00","level":"INFO","msg":"handler: started","stream_id":"yolo11_h23_train_20260312_232717"}
+{"time":"2026-03-12T23:27:26.741154692-04:00","level":"INFO","msg":"stream: started","id":"yolo11_h23_train_20260312_232717"}
+{"time":"2026-03-12T23:27:26.741745882-04:00","level":"INFO","msg":"writer: started","stream_id":"yolo11_h23_train_20260312_232717"}
+{"time":"2026-03-12T23:27:26.741743878-04:00","level":"INFO","msg":"sender: started","stream_id":"yolo11_h23_train_20260312_232717"}

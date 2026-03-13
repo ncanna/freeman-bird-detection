@@ -226,7 +226,8 @@ class AnnotationConverter:
     def coco_to_yolo(self,
                      coco_json_path: Union[str, Path],
                      output_dir: Union[str, Path],
-                     use_filename: bool = True) -> Dict[str, int]:
+                     use_filename: bool = True,
+                     video_filter: Optional[List[str]] = None) -> Dict[str, int]:
         """
         Convert COCO JSON annotations to YOLO format.
 
@@ -235,6 +236,9 @@ class AnnotationConverter:
             output_dir: Directory to save YOLO label files
             use_filename: If True, use the image filename from COCO (without extension) for label files.
                          If False, use image_id as the label filename.
+            video_filter: Optional list of video stems (e.g. ["IMG_0019", "IMG_0032"]) to include.
+                         Images whose filename starts with one of these stems are kept; all others
+                         are skipped. If None, all images are converted.
 
         Returns:
             Dictionary mapping class names to their assigned YOLO class IDs
@@ -256,9 +260,13 @@ class AnnotationConverter:
         coco_categories = {cat['id']: cat['name'] for cat in coco_data['categories']}
 
         # Build image info mapping: image_id -> (filename, width, height)
+        # Apply video_filter if provided: keep only images whose filename starts with a listed stem
+        video_stems = set(video_filter) if video_filter is not None else None
+        all_image_ids = {img['id'] for img in coco_data['images']}
         image_info = {
             img['id']: (img['file_name'], img['width'], img['height'])
             for img in coco_data['images']
+            if video_stems is None or any(img['file_name'].startswith(s) for s in video_stems)
         }
 
         # Group annotations by image_id
@@ -272,9 +280,10 @@ class AnnotationConverter:
             class_name = coco_categories.get(category_id, 'unknown')
             class_id = self._get_or_create_class_id(class_name)
 
-            # Get image dimensions
+            # Skip annotations filtered out by video_filter (not a data error)
             if image_id not in image_info:
-                print(f"Warning: Image ID {image_id} not found in images, skipping annotation")
+                if image_id not in all_image_ids:
+                    print(f"Warning: Image ID {image_id} not found in images, skipping annotation")
                 continue
 
             filename, img_width, img_height = image_info[image_id]
