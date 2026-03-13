@@ -272,7 +272,8 @@ class VideoAnnotator:
             return None
         label_file = self._labels_dir / f"{stem}.txt"
         if not label_file.exists():
-            logger.warning("GT label file missing for stem '%s'", stem)
+            # Missing label file means no annotations for this frame — normal in YOLO datasets
+            logger.debug("No GT annotations for stem '%s' (empty frame)", stem)
             return sv.Detections.empty()
         return load_gt_detections(str(label_file), self._class_names, image_shape)
 
