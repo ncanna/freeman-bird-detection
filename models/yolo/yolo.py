@@ -1,3 +1,8 @@
+"""
+DEPRECATED: This module is superseded by experiments/adapters/yolo_adapter.py.
+Use YOLOAdapter via the experiment framework instead:
+    python -m experiments.runner configs/example_yolo11_h23.yaml
+"""
 from ultralytics import YOLO
 from ultralytics import settings
 from ultralytics.data.split import autosplit
