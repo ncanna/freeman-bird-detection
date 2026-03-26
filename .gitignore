@@ -1,6 +1,4 @@
-data/african-wildlife
 *.pt
 __pycache__
 data
-
-
+outputs

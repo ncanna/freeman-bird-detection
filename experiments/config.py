@@ -19,12 +19,10 @@ class ExperimentConfig:
     hyperparameters: dict[str, Any]  # model-specific; adapter interprets
 
     # Canonical data inputs (COCO JSON + image paths)
-    coco_train: str
-    coco_val: str
-    coco_test: str
+    coco_json: str  # coco annotations for all frames
     images_dir: str  # base dir containing train/ val/ test/ subdirs
 
-    split_json: str | None = None  # auto-discovered from coco_train dir if None
+    split_json: str  # json defining train/val/text splits
 
     output_dir: str = "outputs"
     random_seed: int = 42
@@ -55,8 +53,7 @@ class ExperimentConfig:
             return str(p)
 
         # Resolve all path fields
-        for key in ("coco_train", "coco_val", "coco_test", "images_dir",
-                    "split_json", "output_dir", "resume_from"):
+        for key in ("coco_json", "images_dir", "split_json", "output_dir", "resume_from"):
             if key in raw and raw[key] is not None:
                 raw[key] = resolve(raw[key])
 
@@ -69,13 +66,13 @@ class ExperimentConfig:
         # Check model_name is registered
         get_adapter(self.model_name)  # raises KeyError with helpful message if unknown
 
-        # Check COCO JSON files exist
-        for attr in ("coco_train", "coco_val", "coco_test"):
+        # Check dataset JSON files exist
+        for attr in ("coco_json", "split_json"):
             p = Path(getattr(self, attr))
             if not p.exists():
                 raise FileNotFoundError(
-                    f"COCO JSON not found: {p}\n"
-                    f"Run prepare_yolo_dataset.ipynb to generate dataset files."
+                    f"File not found: {p}\n"
+                    f"Ensure COCO annotation and split JSON files exist"
                 )
 
         # Check images split subdirectories exist
