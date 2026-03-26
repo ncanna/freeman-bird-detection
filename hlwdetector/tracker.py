@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from experiments.artifact_manager import ArtifactManager
-    from experiments.config import ExperimentConfig
+    from hlwdetector.artifact_manager import ArtifactManager
+    from hlwdetector.config import ExperimentConfig
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +48,7 @@ class ExperimentTracker:
             init_kwargs: dict = {
                 "project": config.wandb_project,
                 "name": config.wandb_run_name or config.experiment_name,
+                "dir": Path(artifact_manager.experiment_dir)
             }
 
             # Resume: reuse existing W&B run id from config.json

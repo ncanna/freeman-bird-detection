@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from experiments.adapters.base import BaseModelAdapter
+    from hlwdetector.adapters.base import BaseModelAdapter
 
 _REGISTRY: dict[str, type["BaseModelAdapter"]] = {}
 

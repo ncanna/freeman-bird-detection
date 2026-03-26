@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from experiments.config import ExperimentConfig
+    from hlwdetector.config import ExperimentConfig
 
 logger = logging.getLogger(__name__)
 
@@ -38,18 +38,10 @@ class DatasetManager:
         with open(split_json_path, "r") as f:
             split_data: dict[str, list[str]] = json.load(f)
 
-        # Map split name → COCO JSON path
-        coco_paths = {
-            "train": config.coco_train,
-            "val": config.coco_val,
-            "test": config.coco_test,
-        }
-
         images_base = Path(config.images_dir)
 
         for split_name in ("train", "val", "test"):
             video_stems: list[str] = split_data.get(split_name, [])
-            coco_json_path = coco_paths[split_name]
             images_split_dir = images_base / split_name
 
             if not images_split_dir.exists():
@@ -59,12 +51,12 @@ class DatasetManager:
                 )
 
             images, annotations, categories = self._load_coco_split(
-                coco_json_path, video_stems
+                self._config.coco_json, video_stems
             )
 
             self._split_views[split_name] = SplitView(
                 split=split_name,
-                coco_json_path=coco_json_path,
+                coco_json_path=self._config.coco_json,
                 video_stems=video_stems,
                 images_split_dir=str(images_split_dir),
                 images=images,

@@ -9,13 +9,13 @@ from typing import TYPE_CHECKING
 import numpy as np
 import supervision as sv
 
-from experiments.visualization.annotator import VideoAnnotator
+from hlwdetector.visualization.annotator import VideoAnnotator
 
 if TYPE_CHECKING:
-    from experiments.adapters.base import DetectionResult
-    from experiments.artifact_manager import ArtifactManager
-    from experiments.config import ExperimentConfig
-    from experiments.dataset_manager import DatasetManager, SplitView
+    from hlwdetector.adapters.base import DetectionResult
+    from hlwdetector.artifact_manager import ArtifactManager
+    from hlwdetector.config import ExperimentConfig
+    from hlwdetector.dataset_manager import DatasetManager, SplitView
 
 logger = logging.getLogger(__name__)
 

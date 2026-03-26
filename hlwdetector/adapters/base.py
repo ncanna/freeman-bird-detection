@@ -9,8 +9,9 @@ from typing import TYPE_CHECKING
 import supervision as sv
 
 if TYPE_CHECKING:
-    from experiments.config import ExperimentConfig
-    from experiments.dataset_manager import DatasetManager
+    from hlwdetector.config import ExperimentConfig
+    from hlwdetector.dataset_manager import DatasetManager
+    from hlwdetector.artifact_manager import ArtifactManager
 
 # Mapping from frame stem → sv.Detections
 DetectionResult = dict[str, sv.Detections]
@@ -37,13 +38,15 @@ class MetricsDict:
 
 class BaseModelAdapter(ABC):
     """Abstract base for all model adapters."""
+    def __init__(self, artifact_manager: ArtifactManager) -> None:
+        self.experiment_dir = artifact_manager.experiment_dir
+        self.work_dir = artifact_manager.work_dir
 
     @abstractmethod
     def prepare_data(
         self,
         dataset_manager: "DatasetManager",
         config: "ExperimentConfig",
-        work_dir: str,
     ) -> None:
         """Convert raw dataset into model-native format under work_dir."""
         ...

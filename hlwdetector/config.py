@@ -61,7 +61,7 @@ class ExperimentConfig:
 
     def validate(self) -> None:
         """Raise clear errors if prerequisites are missing."""
-        from experiments.registry import get_adapter  # avoid circular import at module level
+        from hlwdetector.registry import get_adapter  # avoid circular import at module level
 
         # Check model_name is registered
         get_adapter(self.model_name)  # raises KeyError with helpful message if unknown

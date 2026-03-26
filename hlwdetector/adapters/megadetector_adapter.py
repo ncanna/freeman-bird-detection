@@ -9,17 +9,17 @@ from typing import TYPE_CHECKING
 import numpy as np
 import supervision as sv
 
-from experiments.adapters.base import (
+from hlwdetector.adapters.base import (
     BaseModelAdapter,
     DetectionResult,
     MetricsDict,
     TrainingResult,
 )
-from experiments.registry import register_adapter
+from hlwdetector.registry import register_adapter
 
 if TYPE_CHECKING:
-    from experiments.config import ExperimentConfig
-    from experiments.dataset_manager import DatasetManager, SplitView
+    from hlwdetector.config import ExperimentConfig
+    from hlwdetector.dataset_manager import DatasetManager, SplitView
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,8 @@ class MegaDetectorAdapter(BaseModelAdapter):
     classifier step is added (see TODO comment in predict()).
     """
 
-    def __init__(self) -> None:
+    def __init__(self, artifact_manager) -> None:
+        super().__init__(artifact_manager)
         self._detection_model = None
         self._split_views: dict[str, "SplitView"] = {}
         self._cached_predictions: DetectionResult | None = None

@@ -12,8 +12,8 @@ import numpy as np
 import supervision as sv
 
 if TYPE_CHECKING:
-    from experiments.adapters.base import MetricsDict, TrainingResult
-    from experiments.config import ExperimentConfig
+    from hlwdetector.adapters.base import MetricsDict, TrainingResult
+    from hlwdetector.config import ExperimentConfig
 
 logger = logging.getLogger(__name__)
 
@@ -33,21 +33,17 @@ class ArtifactManager:
         else:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             self.experiment_dir = (
-                Path(config.output_dir) / "experiments"
-                / f"{config.experiment_name}_{timestamp}"
+                Path(config.output_dir) / f"{config.experiment_name}_{timestamp}"
             ).resolve()
             self.experiment_dir.mkdir(parents=True, exist_ok=True)
             logger.info("Experiment directory: %s", self.experiment_dir)
 
+        self.work_dir = self.experiment_dir / "work"
+        self.work_dir.mkdir(parents=True, exist_ok=True)
+
         # Ensure visualizations subdirectory exists
         self.visualizations_dir = self.experiment_dir / "visualizations"
         self.visualizations_dir.mkdir(parents=True, exist_ok=True)
-
-    def get_work_dir(self, subdir: str = "adapter") -> Path:
-        """Return (and create) a work subdirectory for model-native data."""
-        work_dir = self.experiment_dir / "work" / subdir
-        work_dir.mkdir(parents=True, exist_ok=True)
-        return work_dir
 
     # ------------------------------------------------------------------ #
     # Serialization helpers

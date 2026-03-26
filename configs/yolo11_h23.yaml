@@ -8,7 +8,7 @@ hyperparameters:
   device: "0"
 coco_json: ../data/h23/instances_merged.json
 split_json: ../data/h23/split.json
-images_dir: ../data/h23/images  # assumes images already split into train/val/test subfolders
+images_dir: ../data/h23/images  # assumes frames already extracted split into train/val/test subfolders
 output_dir: ../outputs
 wandb_project: freeman-bird-detection
 visualize: true

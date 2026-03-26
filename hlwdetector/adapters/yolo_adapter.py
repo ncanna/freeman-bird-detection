@@ -9,17 +9,17 @@ from typing import TYPE_CHECKING
 
 import supervision as sv
 
-from experiments.adapters.base import (
+from hlwdetector.adapters.base import (
     BaseModelAdapter,
     DetectionResult,
     MetricsDict,
     TrainingResult,
 )
-from experiments.registry import register_adapter
+from hlwdetector.registry import register_adapter
 
 if TYPE_CHECKING:
-    from experiments.config import ExperimentConfig
-    from experiments.dataset_manager import DatasetManager
+    from hlwdetector.config import ExperimentConfig
+    from hlwdetector.dataset_manager import DatasetManager
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,8 @@ class YOLOAdapter(BaseModelAdapter):
         prepare_data → train → evaluate → predict
     """
 
-    def __init__(self) -> None:
+    def __init__(self, artifact_manager) -> None:
+        super().__init__(artifact_manager)
         self._model = None
         self._data_yaml_path: str | None = None
         self._training_result: TrainingResult | None = None
@@ -50,12 +51,11 @@ class YOLOAdapter(BaseModelAdapter):
         self,
         dataset_manager: "DatasetManager",
         config: "ExperimentConfig",
-        work_dir: str,
     ) -> None:
         """Convert COCO annotations to YOLO format and create yolo.yaml."""
         from utilities.annotation_converter import AnnotationConverter
 
-        work_path = Path(work_dir)
+        work_path = Path(self.work_dir)
 
         for split_name in ("train", "val", "test"):
             split_view = dataset_manager.get_split(split_name)
@@ -81,7 +81,7 @@ class YOLOAdapter(BaseModelAdapter):
         # Point YOLO at the actual image directories for each split
         converter = AnnotationConverter(class_mapping={"bird": 0})
         converter.create_yaml_config(
-            output_dir=work_dir,
+            output_dir=self.work_dir,
             dataset_path=images_base,
             train_dir="train",
             val_dir="val",
@@ -110,11 +110,12 @@ class YOLOAdapter(BaseModelAdapter):
         device = hp.get("device", "0")
 
         # Point Ultralytics runs to outputs directory
-        runs_dir = str(Path(config.output_dir) / "runs")
+        runs_dir = str(Path(self.work_dir) / "runs")
+        #runs_dir = str(Path(config.output_dir) / "runs")
         settings.update({
             "runs_dir": runs_dir,
             "tensorboard": False,
-            "wandb": config.wandb_project is not None,
+            "wandb": False,
         })
 
         self._model = YOLO(model_weights)
