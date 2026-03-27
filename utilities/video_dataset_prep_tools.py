@@ -198,3 +198,23 @@ def split_report(df, videos, name):
         f"{sub['n_total_frames'].sum():6d} frames | "
         f"bird prevalence: {sub['prevalence'].mean():.3f} ± {sub['prevalence'].std():.3f}"
     )
+
+
+def extract_frames_by_split(split_json, video_dir, out_dir):
+    with open(split_json, "r") as f:
+            splits: dict[str, list[str]] = json.load(f)
+
+    for split_name, video_names in splits.items():
+        out_dir = out_dir / split_name
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        for video_name in video_names:
+            video_path = video_dir / f"{video_name}.MP4"
+            if not video_path.exists():
+                video_path = video_dir / f"{video_name}.mp4"
+            if not video_path.exists():
+                print(f"WARNING: video not found for {video_name}, skipping.")
+                continue
+
+            frames = extract_single_video(video_path, out_dir)
+            print(f"[{split_name:5s}] {video_name}: {len(frames)} frames → {out_dir}")

@@ -45,10 +45,7 @@ class DatasetManager:
             images_split_dir = images_base / split_name
 
             if not images_split_dir.exists():
-                raise FileNotFoundError(
-                    f"Extracted frames not found at {images_split_dir}. "
-                    f"Run prepare_yolo_dataset.ipynb first."
-                )
+                raise FileNotFoundError(f"Extracted frames not found at {images_split_dir}")
 
             images, annotations, categories = self._load_coco_split(
                 self._config.coco_json, video_stems

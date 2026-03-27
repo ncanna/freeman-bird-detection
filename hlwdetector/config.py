@@ -80,10 +80,7 @@ class ExperimentConfig:
         for split in ("train", "val", "test"):
             split_dir = images_base / split
             if not split_dir.exists():
-                raise FileNotFoundError(
-                    f"Extracted frames not found at {split_dir}.\n"
-                    f"Run prepare_yolo_dataset.ipynb first."
-                )
+                raise FileNotFoundError(f"Extracted frames not found at {split_dir}")
 
         # Check visualize_split is valid
         if self.visualize_split not in ("train", "val", "test"):

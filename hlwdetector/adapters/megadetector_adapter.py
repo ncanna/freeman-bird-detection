@@ -53,16 +53,12 @@ class MegaDetectorAdapter(BaseModelAdapter):
             split_view = dataset_manager.get_split(split_name)
             images_dir = Path(split_view.images_split_dir)
             if not images_dir.exists():
-                raise FileNotFoundError(
-                    f"Extracted frames not found at {images_dir}. "
-                    f"Run prepare_yolo_dataset.ipynb first."
-                )
+                raise FileNotFoundError(f"Extracted frames not found at {images_dir}")
+
             image_files = list(images_dir.glob("*.jpg")) + list(images_dir.glob("*.png"))
             if not image_files:
-                raise FileNotFoundError(
-                    f"No image files found in {images_dir}. "
-                    f"Run prepare_yolo_dataset.ipynb first."
-                )
+                raise FileNotFoundError(f"Extracted frames not found at {images_dir}")
+
             self._split_views[split_name] = split_view
 
     # ------------------------------------------------------------------ #
