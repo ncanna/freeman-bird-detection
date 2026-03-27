@@ -74,24 +74,12 @@ Adapters are registered with `@register_adapter(name)` and discovered by name fr
 
 Wraps the Ultralytics YOLO11 model. `prepare_data()` converts COCO annotations to YOLO format and writes a `yolo.yaml` dataset config. `train()` runs Ultralytics training with hyperparameters from the config. Evaluation and prediction use `model.val()` and `model.predict()` respectively.
 
-Supported hyperparameters:
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `model_weights` | Starting weights (e.g. `yolo11n.pt`) | required |
-| `epochs` | Number of training epochs | required |
-| `imgsz` | Input image size | required |
-| `batch` | Batch size | required |
-| `device` | CUDA device index or `"cpu"` | required |
 
 **`megadetector_adapter.py`** — `@register_adapter("megadetector")`
 
-Wraps MegaDetector V6 via the PytorchWildlife library. No fine-tuning is performed; the pretrained model runs inference directly. All detections are treated as birds (a species classifier is a planned future addition). Evaluation uses `pycocotools.COCOeval`.
+**MegaDetector is not fully implemented yet**
 
-Supported hyperparameters:
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `version` | MegaDetector version string | `"MDV6b-yolov9c"` |
-| `confidence_threshold` | Detection confidence cutoff | `0.1` |
+Wraps MegaDetector V6 via the PytorchWildlife library. No fine-tuning is performed; the pretrained model runs inference directly. All detections are treated as birds (a species classifier is a planned future addition). Evaluation uses `pycocotools.COCOeval`.
 
 ### `dataset_manager.py` — Dataset Loading
 
