@@ -1,0 +1,15 @@
+model_name: yolo11
+experiment_name: yolo11_h23
+hyperparameters:
+  model_weights: yolo11n.pt
+  epochs: 50
+  imgsz: 640
+  batch: 16
+  device: "0"
+coco_json: ../data/h23/instances_merged.json
+split_json: ../data/h23/split.json
+images_dir: ../data/h23/images  # assumes frames already extracted split into train/val/test subfolders
+output_dir: ../outputs
+wandb_project: freeman-bird-detection
+visualize: true
+resume_from: ../outputs/yolo11_h23_20260402_004059

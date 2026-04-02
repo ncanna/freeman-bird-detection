@@ -10,9 +10,8 @@ video_dir = Path("data/h23/Videos")  # directory containing annotated video data
 split_json = Path("data/h23/split.json")  # COCO annotations JSON
 out_dir = Path("data/h23/images")  # Path to extract split images
 
-extract_frames_by_split(split_json, video_dir, out_dir)
+#extract_frames_by_split(split_json, video_dir, out_dir)
 
-runner = ExperimentRunner("configs/yolo11_h23.yaml")
-
-
-#runner.run()
+yolo11_config_yaml = "configs/yolo11_h23.yaml"
+runner = ExperimentRunner(yolo11_config_yaml)
+runner.run()
