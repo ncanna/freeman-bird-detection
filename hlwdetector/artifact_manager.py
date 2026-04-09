@@ -22,16 +22,20 @@ class ArtifactManager:
     """Manages all output paths for an experiment run."""
 
     def __init__(self, config: "ExperimentConfig") -> None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         if config.resume_from is not None:
-            # Resume: use existing directory as-is
-            self.experiment_dir = Path(config.resume_from).resolve()
-            if not self.experiment_dir.exists():
+            original_dir = (Path(config.output_dir) / config.resume_experiment).resolve()
+            if not original_dir.exists():
                 raise FileNotFoundError(
-                    f"resume_from directory not found: {self.experiment_dir}"
+                    f"Original experiment dir not found: {original_dir}"
                 )
-            logger.info("Resuming experiment from: %s", self.experiment_dir)
+            self.experiment_dir = (
+                Path(config.output_dir) / f"{config.experiment_name}_{timestamp}"
+            ).resolve()
+            self.experiment_dir.mkdir(parents=True, exist_ok=True)
+            logger.info("Resuming %s -> new dir: %s", original_dir.name, self.experiment_dir)
+            self._stamp_resumed_in(original_dir, self.experiment_dir)
         else:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             self.experiment_dir = (
                 Path(config.output_dir) / f"{config.experiment_name}_{timestamp}"
             ).resolve()
@@ -44,6 +48,17 @@ class ArtifactManager:
         # Ensure visualizations subdirectory exists
         self.visualizations_dir = self.experiment_dir / "visualizations"
         self.visualizations_dir.mkdir(parents=True, exist_ok=True)
+
+    def _stamp_resumed_in(self, original_dir: Path, new_dir: Path) -> None:
+        """Append resumed_in field to the original experiment's config.json."""
+        config_path = original_dir / "config.json"
+        try:
+            data = json.loads(config_path.read_text())
+            data["resumed_in"] = str(new_dir)
+            config_path.write_text(json.dumps(data, indent=2))
+            logger.info("Stamped resumed_in on: %s", config_path)
+        except (FileNotFoundError, json.JSONDecodeError) as exc:
+            logger.warning("Could not stamp resumed_in on original config.json: %s", exc)
 
     # ------------------------------------------------------------------ #
     # Serialization helpers

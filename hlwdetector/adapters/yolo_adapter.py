@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import supervision as sv
+from ultralytics import YOLO, settings
 
 from hlwdetector.adapters.base import (
     BaseModelAdapter,
@@ -29,9 +30,9 @@ if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
 
-@register_adapter("yolo11")
+@register_adapter("yolo")
 class YOLOAdapter(BaseModelAdapter):
-    """YOLO11 adapter backed by Ultralytics.
+    """YOLO adapter backed by Ultralytics.
 
     Internal state is preserved across sequential calls:
         prepare_data → train → evaluate → predict
@@ -97,17 +98,15 @@ class YOLOAdapter(BaseModelAdapter):
 
     def train(self, config: "ExperimentConfig") -> TrainingResult:
         """Fine-tune YOLO and return TrainingResult."""
-        from ultralytics import YOLO, settings  # type: ignore
-
-        if self._data_yaml_path is None:
+        if self._data_yaml_path is None and config.resume_from is None:
             raise RuntimeError("Call prepare_data() before train().")
 
         hp = config.hyperparameters
-        model_weights = hp.get("model_weights", "yolo11n.pt")
-        epochs = hp.get("epochs", 50)
-        imgsz = hp.get("imgsz", 640)
-        batch = hp.get("batch", 16)
-        device = hp.get("device", "0")
+        model_weights = hp.get("model_weights")
+        epochs = hp.get("epochs")
+        imgsz = hp.get("imgsz")
+        batch = hp.get("batch")
+        device = hp.get("device")
 
         # Point Ultralytics runs to outputs directory
         runs_dir = str(Path(self.work_dir) / "runs")
@@ -118,16 +117,29 @@ class YOLOAdapter(BaseModelAdapter):
             "wandb": False,
         })
 
-        self._model = YOLO(model_weights)
-        self._model.train(
-            data=self._data_yaml_path,
-            epochs=epochs,
-            imgsz=imgsz,
-            batch=batch,
-            device=device,
-            project=runs_dir,
-            name=f"{config.experiment_name}_train",
-        )
+        if config.resume_from is None:
+            self._model = YOLO(model_weights)
+            self._model.train(
+                data=self._data_yaml_path,
+                epochs=epochs,
+                imgsz=imgsz,
+                batch=batch,
+                device=device,
+                project=runs_dir,
+                name=f"{config.experiment_name}_train",
+            )
+        else:  # resume: load pretrained weights, train fresh with full hparam control
+            self._discover_data_yaml(config)
+            self._model = YOLO(config.resume_from)
+            self._model.train(
+                data=self._data_yaml_path,
+                epochs=epochs,
+                imgsz=imgsz,
+                batch=batch,
+                device=device,
+                project=runs_dir,
+                name=f"{config.experiment_name}_train",
+            )
 
         run_dir = Path(self._model.trainer.save_dir)
         best_pt = run_dir / "weights" / "best.pt"
@@ -214,36 +226,25 @@ class YOLOAdapter(BaseModelAdapter):
     # ------------------------------------------------------------------ #
 
     def _load_model_from_artifacts(self, config: "ExperimentConfig") -> None:
-        """Load best weights from a saved model.json (resume path)."""
-        import json
-        from ultralytics import YOLO  # type: ignore
-
+        """Load weights from resume_from for evaluate/predict without a prior train()."""
         if config.resume_from is None:
             raise RuntimeError("No model loaded and resume_from is not set.")
-
-        model_json = Path(config.resume_from) / "model.json"
-        if not model_json.exists():
-            raise FileNotFoundError(f"No model.json in {config.resume_from}")
-
-        info = json.loads(model_json.read_text())
-        best_pt = info.get("best_weights_path") or info.get("best_weights")
-        if not best_pt or not Path(best_pt).exists():
-            raise FileNotFoundError(f"best.pt not found: {best_pt}")
-
-        self._model = YOLO(best_pt)
-        logger.info("Loaded best weights from: %s", best_pt)
+        weights_path = Path(config.resume_from)
+        if not weights_path.exists():
+            raise FileNotFoundError(f"Weights file not found: {weights_path}")
+        self._model = YOLO(str(weights_path))
+        logger.info("Loaded weights from: %s", weights_path)
 
     def _discover_data_yaml(self, config: "ExperimentConfig") -> None:
-        """Locate yolo.yaml in the experiment's work directory."""
-        if config.resume_from is None:
-            raise RuntimeError("data yaml not set and resume_from is not set.")
-
-        candidate = Path(config.resume_from) / "work" / "adapter" / "yolo.yaml"
+        """Locate yolo.yaml from the original experiment referenced by resume_experiment."""
+        if config.resume_experiment is None:
+            raise RuntimeError("resume_experiment is not set; cannot locate original yolo.yaml.")
+        candidate = Path(config.output_dir) / config.resume_experiment / "work" / "yolo.yaml"
         if candidate.exists():
             self._data_yaml_path = str(candidate)
             logger.info("Found data yaml at: %s", self._data_yaml_path)
         else:
             raise FileNotFoundError(
                 f"yolo.yaml not found at {candidate}. "
-                f"Ensure prepare_data() was run or the experiment directory is complete."
+                f"Ensure prepare_data() was run in experiment '{config.resume_experiment}'."
             )

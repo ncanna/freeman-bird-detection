@@ -29,9 +29,9 @@ class ExperimentConfig:
 
     wandb_project: str | None = None
     wandb_run_name: str | None = None
-    resume_from: str | None = None  # path to existing experiment dir; skips to evaluate/predict
+    resume_experiment: str | None = None
+    resume_from: str | None = None  # speficies model weights to load and resume training from
 
-    visualize: bool = False
     visualize_split: str = "test"
     visualization_fps: float = 29.0
 
@@ -81,6 +81,19 @@ class ExperimentConfig:
             split_dir = images_base / split
             if not split_dir.exists():
                 raise FileNotFoundError(f"Extracted frames not found at {split_dir}")
+            
+        # Check resume fields are both set or both unset
+        if (self.resume_from is None) != (self.resume_experiment is None):
+            raise ValueError(
+                "resume_from and resume_experiment must both be set or both be unset; "
+                f"got resume_from={self.resume_from!r}, resume_experiment={self.resume_experiment!r}"
+            )
+
+        # Check resume_from path is valid
+        if self.resume_from is not None:
+            resume_from_path = Path(self.resume_from)
+            if not resume_from_path.exists():
+                raise ValueError(f"weights file not found at {resume_from_path}")
 
         # Check visualize_split is valid
         if self.visualize_split not in ("train", "val", "test"):

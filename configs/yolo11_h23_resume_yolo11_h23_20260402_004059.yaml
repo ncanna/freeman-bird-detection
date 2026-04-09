@@ -1,4 +1,4 @@
-model_name: yolo11
+model_name: yolo
 experiment_name: yolo11_h23
 hyperparameters:
   model_weights: yolo11n.pt
@@ -11,5 +11,5 @@ split_json: ../data/h23/split.json
 images_dir: ../data/h23/images  # assumes frames already extracted split into train/val/test subfolders
 output_dir: ../outputs
 wandb_project: freeman-bird-detection
-visualize: true
-resume_from: ../outputs/yolo11_h23_20260402_004059
+resume_experiment: yolo11_h23_20260402_004059
+resume_from: ../outputs/yolo11_h23_20260402_004059/work/runs/yolo11_h23_train/weights/last.pt

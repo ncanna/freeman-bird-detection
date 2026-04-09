@@ -12,6 +12,6 @@ out_dir = Path("data/h23/images")  # Path to extract split images
 
 #extract_frames_by_split(split_json, video_dir, out_dir)
 
-yolo11_config_yaml = "configs/yolo11_h23.yaml"
+yolo11_config_yaml = "configs/yolo11_h23_resume_yolo11_h23_20260402_004059.yaml"
 runner = ExperimentRunner(yolo11_config_yaml)
 runner.run()

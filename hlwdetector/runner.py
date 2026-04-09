@@ -29,30 +29,26 @@ class ExperimentRunner:
     def __init__(self, config_path: str) -> None:
         self.config = ExperimentConfig.from_yaml(config_path)
         self.config.validate()  # raises clear errors if prereqs missing
+        self.artifact_manager = ArtifactManager(self.config)
+        self.artifact_manager.save_config(self.config)
         self.AdapterClass = get_adapter(self.config.model_name)
+        self.adapter = self.AdapterClass(self.artifact_manager)
+        self.tracker = ExperimentTracker(self.config, self.artifact_manager)
         self.dataset_manager = DatasetManager(self.config)
         logger.info("Initializing ExperimentRunner with adapter %s", self.AdapterClass)
 
-    def run(self) -> None:
-        config = self.config
-        self.artifact_manager = ArtifactManager(config)
-        self.artifact_manager.save_config(config)
-        self.adapter = self.AdapterClass(self.artifact_manager)
-        tracker = ExperimentTracker(config, self.artifact_manager)
+    def train(self):
+        if self.config.resume_from is None:
+            self.adapter.prepare_data(self.dataset_manager, self.config)
 
-        if config.resume_from is None:
-            self.adapter.prepare_data(self.dataset_manager, config)
-            training_result = self.adapter.train(config)
-            self.artifact_manager.save_model_info(training_result)
-            tracker.log({"training": training_result.training_metrics})
-        else:
-            logger.info(
-                "Resuming from %s — skipping prepare_data and train.", config.resume_from
-            )
+        training_result = self.adapter.train(self.config)
+        self.artifact_manager.save_model_info(training_result)
+        self.tracker.log({"training": training_result.training_metrics})
 
-        metrics = self.adapter.evaluate(config)
+    def evaluate(self):
+        metrics = self.adapter.evaluate(self.config)
         self.artifact_manager.save_metrics(metrics)
-        tracker.log({
+        self.tracker.log({
             "precision": metrics.precision,
             "recall": metrics.recall,
             "f1": metrics.f1,
@@ -60,15 +56,21 @@ class ExperimentRunner:
             "mAP50_95": metrics.map50_95,
         })
 
-        detections = self.adapter.predict(config)
-        self.artifact_manager.save_detections(detections)
+    def predict(self):
+        self.detections = self.adapter.predict(self.config)
+        self.artifact_manager.save_detections(self.detections)
 
-        if config.visualize:
-            viz = VisualizationPipeline(config, self.artifact_manager, self.dataset_manager)
-            viz.run(detections)
-            tracker.log_artifact(str(self.artifact_manager.visualizations_dir), "visualizations")
+    def visualize(self):
+        viz = VisualizationPipeline(self.config, self.artifact_manager, self.dataset_manager)
+        viz.run(self.detections)
+        self.tracker.log_artifact(str(self.artifact_manager.visualizations_dir), "visualizations")
 
-        tracker.finish()
+    def run_pipeline(self) -> None:
+        self.train()
+        self.evaluate()
+        self.predict()
+        self.visualize()
+        self.tracker.finish()
         print(f"Experiment complete: {self.artifact_manager.experiment_dir}")
 
 
