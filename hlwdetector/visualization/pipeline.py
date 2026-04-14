@@ -45,6 +45,7 @@ class VisualizationPipeline:
             gt_detections=gt_detections,
             predictions=detections,
             class_names=class_names,
+            image_files=split_view.image_paths,
         )
 
         output_path = str(self._artifact_manager.visualizations_dir)

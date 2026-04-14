@@ -8,7 +8,7 @@ hyperparameters:
   device: "0"
 coco_json: ../data/h23/instances_merged.json
 split_json: ../data/h23/split.json
-images_dir: ../data/h23/images  # assumes frames already extracted split into train/val/test subfolders
+images_dir: ../data/h23/images
 output_dir: ../outputs
 wandb_project: freeman-bird-detection
 resume_experiment: yolo11_h23_20260402_004059

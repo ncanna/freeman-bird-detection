@@ -48,18 +48,13 @@ class MegaDetectorAdapter(BaseModelAdapter):
         config: "ExperimentConfig",
         work_dir: str,
     ) -> None:
-        """Validate that split image directories exist and store split views."""
+        """Validate that the images directory exists and store split views."""
+        images_dir = Path(config.images_dir)
+        if not images_dir.exists():
+            raise FileNotFoundError(f"images_dir not found: {images_dir}")
+
         for split_name in ("train", "val", "test"):
-            split_view = dataset_manager.get_split(split_name)
-            images_dir = Path(split_view.images_split_dir)
-            if not images_dir.exists():
-                raise FileNotFoundError(f"Extracted frames not found at {images_dir}")
-
-            image_files = list(images_dir.glob("*.jpg")) + list(images_dir.glob("*.png"))
-            if not image_files:
-                raise FileNotFoundError(f"Extracted frames not found at {images_dir}")
-
-            self._split_views[split_name] = split_view
+            self._split_views[split_name] = dataset_manager.get_split(split_name)
 
     # ------------------------------------------------------------------ #
     # train (stub — MegaDetector is pretrained)
@@ -197,9 +192,8 @@ class MegaDetectorAdapter(BaseModelAdapter):
 
         import cv2
 
-        images_dir = Path(test_view.images_split_dir)
         image_files = sorted(
-            p for p in images_dir.iterdir()
+            p for p in test_view.image_paths
             if p.suffix.lower() in {".jpg", ".jpeg", ".png"}
         )
 

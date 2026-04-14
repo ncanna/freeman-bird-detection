@@ -54,42 +54,59 @@ class YOLOAdapter(BaseModelAdapter):
         config: "ExperimentConfig",
     ) -> None:
         """Convert COCO annotations to YOLO format and create yolo.yaml."""
+        import yaml as _yaml
         from utilities.annotation_converter import AnnotationConverter
 
         work_path = Path(self.work_dir)
+        images_dir = Path(config.images_dir)
+
+        # All labels go into a single flat directory alongside images
+        labels_dir = images_dir.parent / "labels"
+        labels_dir.mkdir(parents=True, exist_ok=True)
+
+        converter = AnnotationConverter(class_mapping={"bird": 0})
 
         for split_name in ("train", "val", "test"):
             split_view = dataset_manager.get_split(split_name)
-            labels_out = work_path / split_name / "labels"
-            labels_out.mkdir(parents=True, exist_ok=True)
 
-            converter = AnnotationConverter(class_mapping={"bird": 0})
+            # Convert COCO annotations to YOLO label files (flat, all splits share labels_dir)
             converter.coco_to_yolo(
                 coco_json_path=split_view.coco_json_path,
-                output_dir=str(labels_out),
+                output_dir=str(labels_dir),
                 use_filename=True,
                 video_filter=split_view.video_stems,
             )
 
-        # Create yolo.yaml using train split's images_dir as dataset root
-        train_view = dataset_manager.get_split("train")
-        val_view = dataset_manager.get_split("val")
-        test_view = dataset_manager.get_split("test")
+            # Write a text file listing absolute image paths for this split
+            image_paths = split_view.image_paths
+            missing = [p for p in image_paths if not p.exists()]
+            if missing:
+                raise FileNotFoundError(
+                    f"Split '{split_name}': {len(missing)}/{len(image_paths)} image files are missing from "
+                    f"{images_dir}. Extract frames first using extract_frames_from_dir(). "
+                    f"First missing: {missing[0]}"
+                )
+            txt_path = work_path / f"{split_name}.txt"
+            txt_path.write_text(
+                "\n".join(str(p) for p in image_paths) + "\n"
+            )
 
-        # dataset_path = images base dir (parent of train/ val/ test/)
-        images_base = str(Path(train_view.images_split_dir).parent)
+        # Write yolo.yaml referencing the text files
+        # YOLO label auto-discovery: replaces /images/ → /labels/ in each image path,
+        # so labels land at {images_dir.parent}/labels/{filename}.txt ✓
+        yaml_data = {
+            "path": str(images_dir.parent),
+            "train": str(work_path / "train.txt"),
+            "val": str(work_path / "val.txt"),
+            "test": str(work_path / "test.txt"),
+            "nc": 1,
+            "names": {0: "bird"},
+        }
+        yaml_path = work_path / "yolo.yaml"
+        with open(yaml_path, "w") as f:
+            _yaml.dump(yaml_data, f, default_flow_style=False)
 
-        # Point YOLO at the actual image directories for each split
-        converter = AnnotationConverter(class_mapping={"bird": 0})
-        converter.create_yaml_config(
-            output_dir=self.work_dir,
-            dataset_path=images_base,
-            train_dir="train",
-            val_dir="val",
-            test_dir="test",
-        )
-
-        self._data_yaml_path = str(work_path / "yolo.yaml")
+        self._data_yaml_path = str(yaml_path)
         logger.info("YOLO data yaml written to: %s", self._data_yaml_path)
 
     # ------------------------------------------------------------------ #
@@ -208,8 +225,8 @@ class YOLOAdapter(BaseModelAdapter):
         if self._model is None:
             self._load_model_from_artifacts(config)
 
-        test_images_dir = str(Path(config.images_dir) / "test")
-        results = self._model.predict(test_images_dir)  # type: ignore
+        test_txt = Path(self.work_dir) / "test.txt"
+        results = self._model.predict(str(test_txt))  # type: ignore
 
         predictions: DetectionResult = {}
         for result in results:
@@ -236,10 +253,11 @@ class YOLOAdapter(BaseModelAdapter):
         logger.info("Loaded weights from: %s", weights_path)
 
     def _discover_data_yaml(self, config: "ExperimentConfig") -> None:
-        """Locate yolo.yaml from the original experiment referenced by resume_experiment."""
+        """Locate yolo.yaml (and test.txt) from the original experiment referenced by resume_experiment."""
         if config.resume_experiment is None:
             raise RuntimeError("resume_experiment is not set; cannot locate original yolo.yaml.")
-        candidate = Path(config.output_dir) / config.resume_experiment / "work" / "yolo.yaml"
+        work_dir = Path(config.output_dir) / config.resume_experiment / "work"
+        candidate = work_dir / "yolo.yaml"
         if candidate.exists():
             self._data_yaml_path = str(candidate)
             logger.info("Found data yaml at: %s", self._data_yaml_path)

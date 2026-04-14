@@ -20,7 +20,7 @@ class ExperimentConfig:
 
     # Canonical data inputs (COCO JSON + image paths)
     coco_json: str  # coco annotations for all frames
-    images_dir: str  # base dir containing train/ val/ test/ subdirs
+    images_dir: str  # base dir containing extracted video frames
 
     split_json: str  # json defining train/val/text splits
 
@@ -75,12 +75,10 @@ class ExperimentConfig:
                     f"Ensure COCO annotation and split JSON files exist"
                 )
 
-        # Check images split subdirectories exist
+        # Check images directory exists
         images_base = Path(self.images_dir)
-        for split in ("train", "val", "test"):
-            split_dir = images_base / split
-            if not split_dir.exists():
-                raise FileNotFoundError(f"Extracted frames not found at {split_dir}")
+        if not images_base.exists():
+            raise FileNotFoundError(f"images_dir not found: {images_base}")
             
         # Check resume fields are both set or both unset
         if (self.resume_from is None) != (self.resume_experiment is None):

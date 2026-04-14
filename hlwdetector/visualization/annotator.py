@@ -104,6 +104,7 @@ class VideoAnnotator:
         gt_color: sv.Color = sv.Color.GREEN,
         pred_color: sv.Color = sv.Color.BLUE,
         frame_map_path: str | None = None,
+        image_files: list[Path] | None = None,
     ) -> None:
         if labels_dir is None and gt_detections is None and predictions is None:
             raise ValueError(
@@ -147,14 +148,19 @@ class VideoAnnotator:
         else:
             self._class_names = []
 
-        # Collect sorted image files
-        image_files = sorted(
-            p for p in self._images_dir.iterdir()
-            if p.suffix.lower() in self._IMAGE_EXTENSIONS
-        )
-        if not image_files:
+        # Collect sorted image files — use provided list if given, otherwise scan directory
+        if image_files is not None:
+            self._image_files = sorted(
+                p for p in image_files
+                if p.suffix.lower() in self._IMAGE_EXTENSIONS
+            )
+        else:
+            self._image_files = sorted(
+                p for p in self._images_dir.iterdir()
+                if p.suffix.lower() in self._IMAGE_EXTENSIONS
+            )
+        if not self._image_files:
             raise ValueError(f"No image files found in images_dir: {images_dir}")
-        self._image_files = image_files
 
         # Build per-source-video frame grouping from frame_map.csv if provided
         self._frame_map_loaded = False

@@ -19,10 +19,16 @@ class SplitView:
     split: str
     coco_json_path: str
     video_stems: list[str]       # from split.json
-    images_split_dir: str        # {images_dir}/{split}/ — validated to exist
+    images_split_dir: str        # flat images_dir — same for all splits
     images: list[dict]           # COCO image dicts filtered to this split
     annotations: list[dict]      # COCO annotation dicts for filtered images
     categories: list[dict]
+
+    @property
+    def image_paths(self) -> list[Path]:
+        """Absolute paths to the image files belonging to this split."""
+        base = Path(self.images_split_dir)
+        return [base / img["file_name"] for img in self.images]
 
 
 class DatasetManager:
@@ -40,12 +46,11 @@ class DatasetManager:
 
         images_base = Path(config.images_dir)
 
+        if not images_base.exists():
+            raise FileNotFoundError(f"images_dir not found: {images_base}")
+
         for split_name in ("train", "val", "test"):
             video_stems: list[str] = split_data.get(split_name, [])
-            images_split_dir = images_base / split_name
-
-            if not images_split_dir.exists():
-                raise FileNotFoundError(f"Extracted frames not found at {images_split_dir}")
 
             images, annotations, categories = self._load_coco_split(
                 self._config.coco_json, video_stems
@@ -55,7 +60,7 @@ class DatasetManager:
                 split=split_name,
                 coco_json_path=self._config.coco_json,
                 video_stems=video_stems,
-                images_split_dir=str(images_split_dir),
+                images_split_dir=str(images_base),
                 images=images,
                 annotations=annotations,
                 categories=categories,
