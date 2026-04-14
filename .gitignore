@@ -1,6 +1,6 @@
 data/
 output/
-
+slurm_and_logs/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
