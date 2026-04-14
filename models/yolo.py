@@ -62,10 +62,10 @@ def main():
     parser = argparse.ArgumentParser(description='Train YOLO model')
     parser.add_argument('--train_data', type=str,
                         default='/home/hice1/wzhu97/scratch/2026_freeman_bird_behavior/data/train.yaml',
-                        help='Path to dataset yaml')
+                        help='Path to training dataset yaml. Default is to train using train_data and validate using val_data')
     parser.add_argument("--val_data", type=str,
                         default='/home/hice1/wzhu97/scratch/2026_freeman_bird_behavior/data/val.yaml',
-                        help='Path to validation data yaml')
+                        help='Path to validation dataset yaml.')
     parser.add_argument('--test_data', type=str,
                         default='/home/hice1/wzhu97/scratch/2026_freeman_bird_behavior/data/test/IMG_0163.MP4',
                         help='Path to test image/video/folder (data/test/ or clip.mp4)')
@@ -86,15 +86,15 @@ def main():
     parser.add_argument("--predict_only", action='store_true',
                         help='Predict only, no training. Using selected YOLO model without tuning. Only --test_data is used if this flag is set.')
     parser.add_argument("--draw_bounding_box", action='store_true',
-                        help='Draw bounding box on the test image/video/folder')
+                        help='If True, draw bounding box on the test image/video/folder')
     parser.add_argument("--recreate_video", action='store_true',
-                        help='Recreate video with bounding box labeled')
+                        help='Recreate video with bounding box labeled (if any). Only works for video input.')
     args = parser.parse_args()
 
     # ##### Load a COCO-pretrained YOLO11n model #####
     model = YOLO(args.yolo_model)
 
-    # Only predict on the test data, no training
+    # ##### Only predict on the test data, no training #####
     if args.predict_only:
         print('# Prediction only, no training')
         results = model.predict(args.test_data,
@@ -111,7 +111,7 @@ def main():
         print('# Validation only, no training')
         results = model.val(data=args.val_data,
                             project=args.output_dir, 
-                            name='val',
+                            name='validation',
                             conf=args.conf)
         return
 
@@ -131,6 +131,7 @@ def main():
                                 )
     
     # ##### Run inference with the best YOLO model #####
+    print('# Validation')
     best_pt = os.path.join(train_results.save_dir, 'weights', 'best.pt') # Get the best model
     # Check best.pt exists (avoid silent issues)
     if not os.path.exists(best_pt):
@@ -140,15 +141,15 @@ def main():
     # Details of params of predict() are here: https://docs.ultralytics.com/modes/predict/#inference-arguments
     # Returned results is a list of Result objects (if one image then a list of length 1)
     # Details of the result object are here: https://docs.ultralytics.com/modes/predict/#working-with-results
-    results = model.predict(args.test_data, # Data can be an image path, video file, URL
-                            project=args.output_dir, 
-                            name='detect',
-                            conf=args.conf, # the minimum confidence threshold for detection
-                            save=True,
-                            imgsz=args.imgsz, # the image size for inference
-                            batch=1, # batch size for inference (only works when the source is a directory, video file, or .txt file)
-                            visualize=False
-                            )
+    results = model.val(data=args.val_data, 
+                        project=args.output_dir, 
+                        name='validation',
+                        conf=args.conf, # the minimum confidence threshold for detection
+                        save=True,
+                        imgsz=args.imgsz, # the image size for inference
+                        batch=1, # batch size for inference (only works when the source is a directory, video file, or .txt file)
+                        visualize=False
+                        )
 
     # ##### Save outputs including bounding box #####
     # Determine save_dir (attached to each Result); grab first one safely
