@@ -38,8 +38,8 @@ class YOLOAdapter(BaseModelAdapter):
         prepare_data → train → evaluate → predict
     """
 
-    def __init__(self, artifact_manager) -> None:
-        super().__init__(artifact_manager)
+    def __init__(self, artifact_manager, tracker) -> None:
+        super().__init__(artifact_manager, tracker)
         self._model = None
         self._data_yaml_path: str | None = None
         self._training_result: TrainingResult | None = None
@@ -136,6 +136,7 @@ class YOLOAdapter(BaseModelAdapter):
 
         if config.resume_from is None:
             self._model = YOLO(model_weights)
+            self._register_epoch_callback()
             self._model.train(
                 data=self._data_yaml_path,
                 epochs=epochs,
@@ -148,6 +149,7 @@ class YOLOAdapter(BaseModelAdapter):
         else:  # resume: load pretrained weights, train fresh with full hparam control
             self._discover_data_yaml(config)
             self._model = YOLO(config.resume_from)
+            self._register_epoch_callback()
             self._model.train(
                 data=self._data_yaml_path,
                 epochs=epochs,
@@ -241,6 +243,32 @@ class YOLOAdapter(BaseModelAdapter):
     # ------------------------------------------------------------------ #
     # Internal helpers
     # ------------------------------------------------------------------ #
+
+    def _register_epoch_callback(self) -> None:
+        """Register an on_fit_epoch_end callback that routes per-epoch metrics to the tracker.
+
+        Fires once per epoch after validation completes. Logs training losses,
+        validation metrics, and learning rates as a single dict at step=epoch.
+        Future adapters should follow this same pattern using their framework's
+        equivalent hook, calling self.log_epoch(epoch, metrics).
+        """
+        adapter = self
+
+        def on_fit_epoch_end(trainer) -> None:
+            epoch = trainer.epoch + 1  # Ultralytics epochs are 0-indexed
+            metrics: dict = {}
+            if trainer.metrics:
+                metrics.update({k: float(v) for k, v in trainer.metrics.items()})
+            if hasattr(trainer, "label_loss_items") and trainer.tloss is not None:
+                metrics.update(
+                    {k: float(v) for k, v in trainer.label_loss_items(trainer.tloss, prefix="train").items()}
+                )
+            if trainer.lr:
+                metrics.update({k: float(v) for k, v in trainer.lr.items()})
+            if metrics:
+                adapter.log_epoch(epoch, metrics)
+
+        self._model.add_callback("on_fit_epoch_end", on_fit_epoch_end)
 
     def _load_model_from_artifacts(self, config: "ExperimentConfig") -> None:
         """Load weights from resume_from for evaluate/predict without a prior train()."""

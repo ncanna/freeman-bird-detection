@@ -32,8 +32,8 @@ class MegaDetectorAdapter(BaseModelAdapter):
     classifier step is added (see TODO comment in predict()).
     """
 
-    def __init__(self, artifact_manager) -> None:
-        super().__init__(artifact_manager)
+    def __init__(self, artifact_manager, tracker) -> None:
+        super().__init__(artifact_manager, tracker)
         self._detection_model = None
         self._split_views: dict[str, "SplitView"] = {}
         self._cached_predictions: DetectionResult | None = None

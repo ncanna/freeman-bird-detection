@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from hlwdetector.config import ExperimentConfig
     from hlwdetector.dataset_manager import DatasetManager
     from hlwdetector.artifact_manager import ArtifactManager
+    from hlwdetector.tracker import ExperimentTracker
 
 # Mapping from frame stem → sv.Detections
 DetectionResult = dict[str, sv.Detections]
@@ -38,9 +39,19 @@ class MetricsDict:
 
 class BaseModelAdapter(ABC):
     """Abstract base for all model adapters."""
-    def __init__(self, artifact_manager: ArtifactManager) -> None:
+    def __init__(
+        self,
+        artifact_manager: "ArtifactManager",
+        tracker: "ExperimentTracker",
+    ) -> None:
         self.experiment_dir = artifact_manager.experiment_dir
         self.work_dir = artifact_manager.work_dir
+        self._tracker = tracker
+
+    def log_epoch(self, epoch: int, metrics: dict) -> None:
+        """Log per-epoch metrics. Call from framework-specific callbacks in subclasses."""
+        if self._tracker is not None:
+            self._tracker.log(metrics, step=epoch)
 
     @abstractmethod
     def prepare_data(

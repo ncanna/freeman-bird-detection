@@ -31,9 +31,9 @@ class ExperimentRunner:
         self.config.validate()  # raises clear errors if prereqs missing
         self.artifact_manager = ArtifactManager(self.config)
         self.artifact_manager.save_config(self.config)
-        self.AdapterClass = get_adapter(self.config.model_name)
-        self.adapter = self.AdapterClass(self.artifact_manager)
         self.tracker = ExperimentTracker(self.config, self.artifact_manager)
+        self.AdapterClass = get_adapter(self.config.model_name)
+        self.adapter = self.AdapterClass(self.artifact_manager, self.tracker)
         self.dataset_manager = DatasetManager(self.config)
         logger.info("Initializing ExperimentRunner with adapter %s", self.AdapterClass)
 

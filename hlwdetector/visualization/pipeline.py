@@ -41,7 +41,7 @@ class VisualizationPipeline:
         gt_detections = self._coco_to_sv_detections(split_view)
 
         annotator = VideoAnnotator(
-            images_dir=split_view.images_split_dir,
+            images_dir=split_view.images_dir,
             gt_detections=gt_detections,
             predictions=detections,
             class_names=class_names,
