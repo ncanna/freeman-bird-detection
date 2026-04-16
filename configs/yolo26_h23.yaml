@@ -2,9 +2,9 @@ config_name: yolo26_h23
 model_name: yolo
 hyperparameters:
   model_weights: yolo26n.pt
-  epochs: 2
+  epochs: 5
   imgsz: 640
-  batch: 16
+  batch: 32
   device: "0"
 coco_json: ../data/h23/instances_subset.json
 split_json: ../data/h23/split_h23_subset.json

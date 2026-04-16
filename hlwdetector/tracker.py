@@ -56,6 +56,7 @@ class ExperimentTracker:
                 # Attaching to an existing experiment (e.g. eval after training)
                 init_kwargs["resume"] = "must"
                 init_kwargs["id"] = wandb_run_id
+                logger.info("Resuming W&B run ID run_id")
             elif config.resume_from is not None:
                 # Training resume: reuse W&B run id from config.json
                 saved = artifact_manager.load_config_json()
@@ -63,7 +64,7 @@ class ExperimentTracker:
                 if run_id:
                     init_kwargs["resume"] = "must"
                     init_kwargs["id"] = run_id
-            logger.info("Resuming W&B run ID run_id")
+                    logger.info("Resuming W&B run ID run_id")
             self._wandb_run = wandb.init(**init_kwargs)
             self._wandb_enabled = True
 
