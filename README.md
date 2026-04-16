@@ -107,7 +107,7 @@ The `split.json` file maps split names to lists of video stems:
 `ArtifactManager` manages all output paths and serialization for an experiment run. It creates a timestamped directory under `output_dir/runs/<experiment_name>_<timestamp>/` and writes:
 - `config.json` — full experiment configuration
 - `model.json` — paths to best and last checkpoint weights
-- `metrics.json` — evaluation results (updated on every log for preemption resilience)
+- `metrics.json` — evaluation results
 - `detections.json` — per-frame inference results
 
 ### `tracker.py` — Experiment Tracking

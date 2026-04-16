@@ -1,5 +1,5 @@
 model_name: yolo
-experiment_name: yolo11_h23
+config_name: yolo11_h23
 hyperparameters:
   model_weights: yolo11n.pt
   epochs: 50

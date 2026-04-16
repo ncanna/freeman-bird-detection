@@ -1,7 +1,7 @@
-config_name: yolo11_h23
+config_name: yolo26_h23
 model_name: yolo
 hyperparameters:
-  model_weights: yolo11n.pt
+  model_weights: yolo26n.pt
   epochs: 2
   imgsz: 640
   batch: 16
@@ -11,5 +11,5 @@ split_json: ../data/h23/split_h23_subset.json
 images_dir: ../data/h23/images
 output_dir: ../outputs
 wandb_project: freeman-bird-detection
-#resume_experiment: yolo11_h23_20260402_004059
-#resume_from: ../outputs/yolo11_h23_20260402_004059/work/runs/yolo11_h23_train/weights/last.pt
+resume_experiment: yolo26_h23_20260414_232749
+resume_from: ../outputs/yolo26_h23_20260414_232749/work/runs/yolo26_h23_train/weights/last.pt

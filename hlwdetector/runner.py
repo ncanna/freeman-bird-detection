@@ -7,6 +7,7 @@ Usage:
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from hlwdetector.artifact_manager import ArtifactManager
 from hlwdetector.config import ExperimentConfig
@@ -43,35 +44,88 @@ class ExperimentRunner:
 
         training_result = self.adapter.train(self.config)
         self.artifact_manager.save_model_info(training_result)
-        self.tracker.log({"training": training_result.training_metrics})
 
     def evaluate(self):
         metrics = self.adapter.evaluate(self.config)
         self.artifact_manager.save_metrics(metrics)
         self.tracker.log({
-            "precision": metrics.precision,
-            "recall": metrics.recall,
-            "f1": metrics.f1,
-            "mAP50": metrics.map50,
-            "mAP50_95": metrics.map50_95,
+            "val/precision": metrics.precision,
+            "val/recall": metrics.recall,
+            "val/f1": metrics.f1,
+            "val/mAP50": metrics.map50,
+            "val/mAP50_95": metrics.map50_95,
         })
 
     def predict(self):
         self.detections = self.adapter.predict(self.config)
         self.artifact_manager.save_detections(self.detections)
 
-    def visualize(self):
+    def visualize_predictions(self):
+        if not hasattr(self, "detections"):
+            self.detections = self.artifact_manager.load_detections()
         viz = VisualizationPipeline(self.config, self.artifact_manager, self.dataset_manager)
         viz.run(self.detections)
-        self.tracker.log_artifact(str(self.artifact_manager.visualizations_dir), "visualizations")
+        video_path = str(
+            self.artifact_manager.visualizations_dir / f"{self.config.config_name}_annotated.mp4"
+        )
+        self.tracker.log_video(video_path)
 
     def run_pipeline(self) -> None:
         self.train()
         self.evaluate()
         self.predict()
-        self.visualize()
+        self.visualize_predictions()
         self.tracker.finish()
         print(f"Experiment complete: {self.artifact_manager.experiment_dir}")
+
+
+    @classmethod
+    def from_experiment_dir(cls, experiment_dir: str) -> "ExperimentRunner":
+        """Reconstruct a runner from a completed experiment directory for eval/predict.
+
+        Does not create a new output directory. All outputs land in the existing dir.
+        Raises FileNotFoundError if config.json or model.json are missing.
+        """
+        import dataclasses
+        import json as _json
+
+        experiment_dir = Path(experiment_dir).resolve()
+
+        config_json_path = experiment_dir / "config.json"
+        model_json_path  = experiment_dir / "model.json"
+        if not config_json_path.exists():
+            raise FileNotFoundError(f"config.json not found in: {experiment_dir}")
+        if not model_json_path.exists():
+            raise FileNotFoundError(
+                f"model.json not found in: {experiment_dir}\n"
+                "This experiment may not have completed training."
+            )
+
+        # Load config, stripping extra keys (wandb_run_id, resumed_in, etc.)
+        raw = _json.loads(config_json_path.read_text())
+        wandb_run_id = raw.get("wandb_run_id")
+        valid_fields = {f.name for f in dataclasses.fields(ExperimentConfig)}
+        config = ExperimentConfig(**{k: v for k, v in raw.items() if k in valid_fields})
+
+        artifact_manager = ArtifactManager.from_existing_dir(experiment_dir)
+        tracker          = ExperimentTracker(config, artifact_manager, wandb_run_id=wandb_run_id)
+        AdapterClass     = get_adapter(config.model_name)
+        adapter          = AdapterClass(artifact_manager, tracker)
+        dataset_manager  = DatasetManager(config)
+
+        runner = cls.__new__(cls)
+        runner.config           = config
+        runner.artifact_manager = artifact_manager
+        runner.tracker          = tracker
+        runner.AdapterClass     = AdapterClass
+        runner.adapter          = adapter
+        runner.dataset_manager  = dataset_manager
+        logger.info(
+            "ExperimentRunner attached to: %s (adapter: %s)",
+            experiment_dir.name,
+            AdapterClass,
+        )
+        return runner
 
 
 if __name__ == "__main__":

@@ -23,6 +23,7 @@ class ArtifactManager:
 
     def __init__(self, config: "ExperimentConfig") -> None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.experiment_name = f"{config.config_name}_{timestamp}"
         if config.resume_from is not None:
             original_dir = (Path(config.output_dir) / config.resume_experiment).resolve()
             if not original_dir.exists():
@@ -30,14 +31,14 @@ class ArtifactManager:
                     f"Original experiment dir not found: {original_dir}"
                 )
             self.experiment_dir = (
-                Path(config.output_dir) / f"{config.experiment_name}_{timestamp}"
+                Path(config.output_dir) / self.experiment_name
             ).resolve()
             self.experiment_dir.mkdir(parents=True, exist_ok=True)
             logger.info("Resuming %s -> new dir: %s", original_dir.name, self.experiment_dir)
             self._stamp_resumed_in(original_dir, self.experiment_dir)
         else:
             self.experiment_dir = (
-                Path(config.output_dir) / f"{config.experiment_name}_{timestamp}"
+                Path(config.output_dir) / self.experiment_name
             ).resolve()
             self.experiment_dir.mkdir(parents=True, exist_ok=True)
             logger.info("Experiment directory: %s", self.experiment_dir)
@@ -48,6 +49,27 @@ class ArtifactManager:
         # Ensure visualizations subdirectory exists
         self.visualizations_dir = self.experiment_dir / "visualizations"
         self.visualizations_dir.mkdir(parents=True, exist_ok=True)
+
+    @classmethod
+    def from_existing_dir(cls, experiment_dir: "str | Path") -> "ArtifactManager":
+        """Attach to an existing experiment directory — no new timestamp, no mkdir."""
+        experiment_dir = Path(experiment_dir).resolve()
+        if not experiment_dir.exists():
+            raise FileNotFoundError(f"Experiment directory not found: {experiment_dir}")
+
+        instance = cls.__new__(cls)
+        instance.experiment_name = experiment_dir.name
+        instance.experiment_dir = experiment_dir
+        instance.work_dir = experiment_dir / "work"
+        instance.visualizations_dir = experiment_dir / "visualizations"
+
+        if not instance.work_dir.exists():
+            raise FileNotFoundError(f"work/ subdirectory not found in: {experiment_dir}")
+        # visualizations/ may not exist in older runs — create it like __init__ does
+        instance.visualizations_dir.mkdir(parents=True, exist_ok=True)
+
+        logger.info("Attached to existing experiment: %s", experiment_dir)
+        return instance
 
     def _stamp_resumed_in(self, original_dir: Path, new_dir: Path) -> None:
         """Append resumed_in field to the original experiment's config.json."""
@@ -100,14 +122,17 @@ class ArtifactManager:
         if not det_path.exists():
             raise FileNotFoundError(f"No detections.json in {self.experiment_dir}")
         raw = json.loads(det_path.read_text())
-        return {
-            stem: sv.Detections(
-                xyxy=np.array(d["xyxy"], dtype=np.float32),
-                confidence=np.array(d["confidence"], dtype=np.float32),
-                class_id=np.array(d["class_id"], dtype=int),
-            )
-            for stem, d in raw.items()
-        }
+        result = {}
+        for stem, d in raw.items():
+            if not d["xyxy"]:
+                result[stem] = sv.Detections.empty()
+            else:
+                result[stem] = sv.Detections(
+                    xyxy=np.array(d["xyxy"], dtype=np.float32),
+                    confidence=np.array(d["confidence"], dtype=np.float32),
+                    class_id=np.array(d["class_id"], dtype=int),
+                )
+        return result
 
     def load_config_json(self) -> dict:
         """Load the raw config.json dict (used by ExperimentTracker for resume)."""
