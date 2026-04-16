@@ -15,85 +15,29 @@ freeman-bird-detection/
 └── run_experiments.ipynb # Interactive experiment notebook
 ```
 
-## hlwdetector Package
+## Prerequisites
 
-The `hlwdetector` package provides the framework for defining, running, and tracking detection experiments.
-
-### `config.py` — Experiment Configuration
-
-`ExperimentConfig` is a dataclass that defines all parameters for an experiment. Configs are loaded from YAML files with all paths resolved relative to the YAML's location.
-
-Key fields:
-- `model_name` — which adapter to use (`"yolo11"` or `"megadetector"`)
-- `experiment_name` — used for naming output directories
-- `coco_json` — path to the COCO-format annotation file
-- `images_dir` — root directory containing extracted frame images
-- `split_json` — path to the train/val/test split definition
-- `hyperparameters` — model-specific training parameters (passed through to the adapter)
-- `output_dir` — root directory for all experiment outputs (default: `outputs/`)
-- `wandb_project` — optional Weights & Biases project name
-- `resume_from` — path to a prior experiment directory to resume from
-- `visualize` / `visualize_split` — whether to produce annotated output videos
-
-### `runner.py` — Experiment Runner
-
-`ExperimentRunner` is the main entry point. It orchestrates the full pipeline: data preparation, training, evaluation, prediction, and visualization.
-
-```python
-from hlwdetector import ExperimentRunner
-
-runner = ExperimentRunner("configs/yolo11_h23.yaml")
-runner.run()
+1. Install dependencies:
+```bash
+pip install -r requirements.txt
 ```
 
-`runner.run()` executes:
-1. `adapter.prepare_data()` — converts the dataset to the model's native format
-2. `adapter.train()` — trains (or loads) the model
-3. `adapter.evaluate()` — evaluates on the test split
-4. `adapter.predict()` — runs inference on the test split
-5. Visualization pipeline (if enabled)
-6. Saves all artifacts and logs metrics
+2. Ensure you have the following inputs ready:
+   - A COCO-format annotation JSON (e.g. `instances_merged.json`)
+   - A split JSON mapping split names to video stems (see format below)
+   - Extracted frame images in a single flat directory (`images_dir`)
 
-When `resume_from` is set in the config, steps 1 and 2 are skipped and weights are loaded from the prior run's artifacts.
-
-### `adapters/` — Model Adapters
-
-All models implement `BaseModelAdapter` from `adapters/base.py`:
-
+If you need to extract frames from raw videos:
 ```python
-class BaseModelAdapter(ABC):
-    def prepare_data(self) -> None: ...
-    def train(self) -> TrainingResult: ...
-    def evaluate(self) -> MetricsDict: ...
-    def predict(self) -> DetectionResult: ...
+from utilities.video_dataset_prep_tools import extract_frames_from_dir
+
+extract_frames_from_dir(
+    video_dir="/path/to/videos",
+    output_dir="data/h23/images"
+)
 ```
 
-Adapters are registered with `@register_adapter(name)` and discovered by name from the config.
-
-**`yolo_adapter.py`** — `@register_adapter("yolo11")`
-
-Wraps the Ultralytics YOLO11 model. `prepare_data()` converts COCO annotations to YOLO format and writes a `yolo.yaml` dataset config. `train()` runs Ultralytics training with hyperparameters from the config. Evaluation and prediction use `model.val()` and `model.predict()` respectively.
-
-
-**`megadetector_adapter.py`** — `@register_adapter("megadetector")`
-
-**MegaDetector is not fully implemented yet**
-
-Wraps MegaDetector V6 via the PytorchWildlife library. No fine-tuning is performed; the pretrained model runs inference directly. All detections are treated as birds (a species classifier is a planned future addition). Evaluation uses `pycocotools.COCOeval`.
-
-### `dataset_manager.py` — Dataset Loading
-
-`DatasetManager` loads the COCO JSON and split definition, providing per-split views of the dataset.
-
-```python
-from hlwdetector.dataset_manager import DatasetManager
-
-dm = DatasetManager(config)
-train_split = dm.get_split("train")
-# train_split.images, train_split.annotations, train_split.images_split_dir
-```
-
-The `split.json` file maps split names to lists of video stems:
+The `split.json` file maps split names to lists of video stems. The framework filters images at runtime by matching each frame's filename prefix against the listed stems:
 ```json
 {
   "train": ["video_001", "video_002"],
@@ -102,53 +46,15 @@ The `split.json` file maps split names to lists of video stems:
 }
 ```
 
-### `artifact_manager.py` — Output Artifacts
-
-`ArtifactManager` manages all output paths and serialization for an experiment run. It creates a timestamped directory under `output_dir/runs/<experiment_name>_<timestamp>/` and writes:
-- `config.json` — full experiment configuration
-- `model.json` — paths to best and last checkpoint weights
-- `metrics.json` — evaluation results
-- `detections.json` — per-frame inference results
-
-### `tracker.py` — Experiment Tracking
-
-`ExperimentTracker` handles both local and Weights & Biases metric logging. W&B is optional and non-fatal if unavailable. Metrics are written to `metrics.json` on every `log()` call so that results are preserved if a job is preempted on PACE ICE.
-
-### `visualization/` — Output Videos
-
-`VisualizationPipeline` (in `visualization/pipeline.py`) generates annotated videos from the test split, overlaying ground-truth boxes (green) and predicted boxes (blue). When a `frame_map.csv` is present, one video is produced per source video.
-
-`VideoAnnotator` (in `visualization/annotator.py`) handles the frame-level rendering using the Roboflow Supervision library.
-
 ---
 
-## Running Experiments
-
-### Prerequisites
-
-1. Extract video frames:
-```python
-from utilities.video_dataset_prep_tools import extract_frames_by_split
-
-extract_frames_by_split(
-    video_dir="/path/to/videos",
-    split_json="data/h23/split.json",
-    output_dir="data/h23/images"
-)
-```
-
-2. Ensure you have:
-   - A COCO-format annotation JSON (`instances_merged.json`)
-   - A split JSON (`split.json`) mapping split names to video stems
-   - Extracted frame images organized by split under `images_dir`
-
-### Defining a Config
+## Defining a Config
 
 Create a YAML file in `configs/`. All paths are resolved relative to the YAML file's location:
 
 ```yaml
-model_name: yolo11
-experiment_name: yolo11_h23
+config_name: yolo11_h23
+model_name: yolo
 
 hyperparameters:
   model_weights: yolo11n.pt
@@ -163,30 +69,158 @@ images_dir: ../data/h23/images
 output_dir: ../outputs
 
 wandb_project: freeman-bird-detection
-visualize: true
+visualize_split: test
 ```
 
-### Running an Experiment
+**Key config fields:**
+- `config_name` — used for naming output directories
+- `model_name` — which adapter to use (`"yolo"`, `"rtdetr"`, or `"megadetector"`)
+- `hyperparameters` — model-specific training parameters passed through to the adapter
+- `wandb_project` — optional Weights & Biases project name for logging
+- `visualize_split` — which split to visualize after prediction (`"train"`, `"val"`, or `"test"`)
+- `resume_from` / `resume_experiment` — see [Resuming Training](#resuming-training) below
 
-**From a script:**
+---
+
+## Running Experiments
+
+Each experiment produces a timestamped output directory under `outputs/<config_name>_<timestamp>/` containing:
+- `config.json` — full experiment configuration
+- `model.json` — paths to best and last checkpoint weights
+- `metrics.json` — evaluation results
+- `detections.json` — per-frame inference results
+- `visualizations/` — annotated output videos
+- `experiment.log` — full run log
+
+### Full Pipeline
+
+Run all stages (train → evaluate → predict → visualize) in sequence using `run_pipeline()`:
+
 ```python
 from hlwdetector import ExperimentRunner
 
 runner = ExperimentRunner("configs/yolo11_h23.yaml")
-runner.run()
+runner.run_pipeline()
 ```
 
-**From the notebook:**
+### Running Stages Individually
 
-Open `run_experiments.ipynb` and run the cells. The notebook documents required paths and prints split statistics before launching the experiment.
+Each stage can also be called separately. This is useful for re-running evaluation or visualization without retraining:
 
-### Resuming a Run
+```python
+from hlwdetector import ExperimentRunner
 
-To resume a previously interrupted experiment, set `resume_from` in the config to the prior run's output directory. The runner will skip data preparation and training, loading weights from `model.json` in that directory.
+runner = ExperimentRunner("configs/yolo11_h23.yaml")
+runner.train()
+runner.evaluate()
+runner.predict()
+runner.visualize_predictions()
+```
+
+### Attaching to an Existing Experiment
+
+To run evaluation, prediction, or visualization on a previously completed experiment, use `ExperimentRunner.from_experiment_dir()`. This attaches to the existing output directory — no new timestamped directory is created, and all outputs are written back into the original run.
+
+```python
+from hlwdetector import ExperimentRunner
+
+runner = ExperimentRunner.from_experiment_dir("outputs/yolo11_h23_20260312_233336")
+runner.evaluate()
+runner.predict()
+runner.visualize_predictions()
+```
+
+This requires that `config.json` and `model.json` are present in the experiment directory (i.e., training completed successfully).
+
+### Resuming Training
+
+To continue training from a prior checkpoint, set both `resume_from` and `resume_experiment` in the config. `resume_from` points to the model weights file; `resume_experiment` is the name of the original output directory. A new timestamped output directory is created for the resumed run.
 
 ```yaml
-resume_from: ../outputs/runs/yolo11_h23_20260312_233336
+resume_experiment: yolo11_h23_20260402_004059
+resume_from: ../outputs/yolo11_h23_20260402_004059/work/runs/yolo11_h23_train/weights/last.pt
 ```
+
+Both fields must be set together or left unset.
+
+### Running Multiple Experiments
+
+To run several configs in sequence:
+
+```python
+from hlwdetector.runner import ExperimentRunner
+
+for config in ["configs/yolo11_h23.yaml", "configs/yolo26_h23.yaml", "configs/rtdetr_h23.yaml"]:
+    ExperimentRunner(config).run_pipeline()
+```
+
+---
+
+## hlwdetector Package
+
+### `config.py` — Experiment Configuration
+
+`ExperimentConfig` is a dataclass that defines all parameters for an experiment. Configs are loaded from YAML files with all paths resolved relative to the YAML's location.
+
+### `runner.py` — Experiment Runner
+
+`ExperimentRunner` is the main entry point. It exposes:
+- `run_pipeline()` — full train → evaluate → predict → visualize sequence
+- `train()` — data preparation and model training
+- `evaluate()` — evaluation on the configured split, writes `metrics.json`
+- `predict()` — inference on the configured split, writes `detections.json`
+- `visualize_predictions()` — generates annotated videos from predictions
+- `ExperimentRunner.from_experiment_dir(path)` — attach to a completed experiment for post-hoc evaluation or visualization
+
+### `adapters/` — Model Adapters
+
+All models implement `BaseModelAdapter` from `adapters/base.py`:
+
+```python
+class BaseModelAdapter(ABC):
+    def prepare_data(self) -> None: ...
+    def train(self) -> TrainingResult: ...
+    def evaluate(self) -> MetricsDict: ...
+    def predict(self) -> DetectionResult: ...
+```
+
+Adapters are registered with `@register_adapter(name)` and resolved by `model_name` from the config.
+
+**`yolo_adapter.py`** — `@register_adapter("yolo")`
+
+Wraps Ultralytics YOLO models (YOLO11, YOLO26, etc.). `prepare_data()` converts COCO annotations to YOLO format and writes a `yolo.yaml` dataset config. `train()` runs Ultralytics training with hyperparameters from the config.
+
+**`rtdetr_adapter.py`** — `@register_adapter("rtdetr")`
+
+Wraps Ultralytics RT-DETR models. Same interface as the YOLO adapter.
+
+**`megadetector_adapter.py`** — `@register_adapter("megadetector")`
+
+Wraps MegaDetector V6 via the PytorchWildlife library. No fine-tuning is performed; the pretrained model runs inference directly. **Not fully implemented.**
+
+### `dataset_manager.py` — Dataset Loading
+
+`DatasetManager` loads the COCO JSON and split definition, producing per-split views of the data. Images are read from a single flat `images_dir`; split membership is determined at runtime by matching each frame's filename prefix against the video stems listed in `split.json`.
+
+```python
+from hlwdetector.dataset_manager import DatasetManager
+
+dm = DatasetManager(config)
+train_split = dm.get_split("train")
+# train_split.images, train_split.annotations, train_split.image_paths
+```
+
+### `artifact_manager.py` — Output Artifacts
+
+`ArtifactManager` manages all output paths and serialization for an experiment. Use `ArtifactManager.from_existing_dir(path)` (called automatically by `ExperimentRunner.from_experiment_dir`) to attach to a completed run without creating a new directory.
+
+### `tracker.py` — Experiment Tracking
+
+`ExperimentTracker` handles both local and Weights & Biases metric logging. W&B is optional and non-fatal if unavailable. Metrics are written to `metrics.json` on every `log()` call so that results are preserved if a job is preempted.
+
+### `visualization/` — Output Videos
+
+`VisualizationPipeline` generates annotated videos from the configured split, overlaying ground-truth boxes (green) and predicted boxes (blue). When a `frame_map.csv` is present, one video is produced per source video.
 
 ---
 
@@ -194,18 +228,13 @@ resume_from: ../outputs/runs/yolo11_h23_20260312_233336
 
 ### `utilities/video_dataset_prep_tools.py`
 
-Tools for preparing video datasets:
-
-- `extract_frames_from_dir(video_dir, output_dir)` — extracts all frames from `.mp4` files, writes `frame_map.csv`
+- `extract_frames_from_dir(video_dir, output_dir)` — extracts all frames from `.mp4` files into a flat directory, writes `frame_map.csv`
 - `stratified_video_split(coco_json, output_path, ...)` — creates a stratified train/val/test split by video prevalence quartile
 - `extract_frames_by_split(video_dir, split_json, output_dir)` — extracts frames organized by split
 
 ### `utilities/annotation_converter.py`
 
-`AnnotationConverter` converts between annotation formats:
-- CVAT XML (track-based)
-- COCO JSON
-- YOLO (normalized center coordinates)
+`AnnotationConverter` converts between annotation formats (CVAT XML, COCO JSON, YOLO):
 
 ```python
 from utilities.annotation_converter import AnnotationConverter

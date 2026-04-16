@@ -71,6 +71,26 @@ class ArtifactManager:
         logger.info("Attached to existing experiment: %s", experiment_dir)
         return instance
 
+    def attach_log_file(self, mode: str = "w") -> None:
+        """Add a FileHandler to the root logger writing to experiment.log.
+
+        Removes any stale FileHandlers first so notebook reruns don't stack handlers.
+        Use mode='a' when attaching to an existing experiment dir.
+        """
+        log_path = self.experiment_dir / "experiment.log"
+        root = logging.getLogger()
+        for h in root.handlers[:]:
+            if isinstance(h, logging.FileHandler):
+                h.close()
+                root.removeHandler(h)
+        handler = logging.FileHandler(log_path, mode=mode, encoding="utf-8")
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s %(levelname)s %(name)s — %(message)s")
+        )
+        root.addHandler(handler)
+        self._log_handler = handler
+        logger.info("Logging to file: %s", log_path)
+
     def _stamp_resumed_in(self, original_dir: Path, new_dir: Path) -> None:
         """Append resumed_in field to the original experiment's config.json."""
         config_path = original_dir / "config.json"

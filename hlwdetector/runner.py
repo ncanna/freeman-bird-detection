@@ -31,6 +31,7 @@ class ExperimentRunner:
         self.config = ExperimentConfig.from_yaml(config_path)
         self.config.validate()  # raises clear errors if prereqs missing
         self.artifact_manager = ArtifactManager(self.config)
+        self.artifact_manager.attach_log_file()
         self.artifact_manager.save_config(self.config)
         self.tracker = ExperimentTracker(self.config, self.artifact_manager)
         self.AdapterClass = get_adapter(self.config.model_name)
@@ -108,6 +109,7 @@ class ExperimentRunner:
         config = ExperimentConfig(**{k: v for k, v in raw.items() if k in valid_fields})
 
         artifact_manager = ArtifactManager.from_existing_dir(experiment_dir)
+        artifact_manager.attach_log_file(mode="a")
         tracker          = ExperimentTracker(config, artifact_manager, wandb_run_id=wandb_run_id)
         AdapterClass     = get_adapter(config.model_name)
         adapter          = AdapterClass(artifact_manager, tracker)

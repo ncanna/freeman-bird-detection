@@ -1,7 +1,7 @@
 config_name: rtdetr_h23
 model_name: rtdetr
 hyperparameters:
-  model_weights:
+  model_weights: rtdetr-l.pt
   epochs: 2
   imgsz: 640
   batch: 16
