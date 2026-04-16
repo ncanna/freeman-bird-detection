@@ -1,5 +1,8 @@
 *.pt
 __pycache__
 .vscode
-data
-outputs
+data/
+outputs/
+archive/
+output/
+slurm_and_logs/
