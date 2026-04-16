@@ -2,7 +2,7 @@
 __pycache__
 .vscode
 data/
-outputs/
+output/
 archive/
 output/
 slurm_and_logs/

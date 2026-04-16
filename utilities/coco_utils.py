@@ -81,7 +81,8 @@ def coco_annos_to_detr_targets(annotations, img_h, img_w, device):
         img_w:       image width in pixels  
         device:      torch device to put tensors on
     Returns:
-        targets: list of dicts with 'labels' and 'boxes' tensors, one per image
+        targets: list of dicts with 'labels' and 'boxes' tensors, one per image.
+                 The target boxes are expected in format (center_x, center_y, w, h), normalized by the image size.
     """
     targets = []
     for anno_list in annotations:
