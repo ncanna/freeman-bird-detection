@@ -1,0 +1,259 @@
+@startuml hlwdetector-class-diagram
+
+skinparam classAttributeIconSize 0
+skinparam classFontSize 12
+skinparam classHeaderBackgroundColor #E8F4F8
+skinparam classBorderColor #4A90D9
+skinparam arrowColor #555555
+skinparam packageBorderColor #AAAAAA
+skinparam packageBackgroundColor #e7e9d4
+skinparam abstractClassBackgroundColor #e2dbcb
+skinparam stereotypeCBackgroundColor #D5E8D4
+skinparam linetype ortho
+
+' ─────────────────────────────────────────────
+' DATA / VALUE OBJECTS
+' ─────────────────────────────────────────────
+package "Data Objects" {
+
+  class ExperimentConfig <<dataclass>> {
+    + config_name : str
+    + model_name : str
+    + hyperparameters : dict[str, Any]
+    + coco_json : str
+    + images_dir : str
+    + split_json : str
+    + output_dir : str
+    + random_seed : int
+    + wandb_project : str | None
+    + resume_experiment : str | None
+    + resume_from : str | None
+    + visualize_split : str
+    + visualization_fps : float
+    --
+    + {static} from_yaml(path: str) : ExperimentConfig
+    + validate() : None
+  }
+
+  class SplitView <<dataclass>> {
+    + split : str
+    + coco_json_path : str
+    + video_stems : list[str]
+    + images_dir : str
+    + images : list[dict]
+    + annotations : list[dict]
+    + categories : list[dict]
+    --
+    + image_paths : list[Path]  <<property>>
+  }
+
+  class TrainingResult <<dataclass>> {
+    + run_dir : str
+    + best_weights_path : str | None
+    + last_weights_path : str | None
+    + training_metrics : dict
+  }
+
+  class MetricsDict <<dataclass>> {
+    + precision : float
+    + recall : float
+    + f1 : float
+    + map50 : float
+    + map50_95 : float
+    + accuracy : float | None
+    + raw : dict
+  }
+}
+
+' ─────────────────────────────────────────────
+' CORE INFRASTRUCTURE
+' ─────────────────────────────────────────────
+package "Core Infrastructure" {
+
+  class DatasetManager {
+    - _config : ExperimentConfig
+    - _split_views : dict[str, SplitView]
+    --
+    + __init__(config: ExperimentConfig)
+    + get_split(split: str) : SplitView
+  }
+
+  class ArtifactManager {
+    + experiment_name : str
+    + experiment_dir : Path
+    + work_dir : Path
+    + visualizations_dir : Path
+    --
+    + __init__(config: ExperimentConfig)
+    + {static} from_existing_dir(dir: str | Path) : ArtifactManager
+    + attach_log_file(mode: str) : None
+    + save_config(config: ExperimentConfig, ...) : None
+    + save_model_info(result: TrainingResult) : None
+    + save_metrics(metrics: MetricsDict) : None
+    + save_detections(detections: DetectionResult) : None
+    + load_detections() : DetectionResult
+    + load_config_json() : dict
+  }
+
+  class ExperimentTracker {
+    - _config : ExperimentConfig
+    - _artifact_manager : ArtifactManager
+    - _metrics : dict
+    - _wandb_run : Any | None
+    - _wandb_enabled : bool
+    --
+    + __init__(config, artifact_manager, wandb_run_id)
+    + log(metrics: dict, step: int | None) : None
+    + log_wandb_step(metrics: dict, step: int) : None
+    + log_video(path: str, key: str) : None
+    + log_artifact(path, name, artifact_type) : None
+    + finish() : None
+  }
+}
+
+' ─────────────────────────────────────────────
+' MODEL ADAPTERS
+' ─────────────────────────────────────────────
+package "Model Adapters" {
+
+  abstract class BaseModelAdapter {
+    + experiment_dir : Path
+    + work_dir : Path
+    # _tracker : ExperimentTracker
+    --
+    + __init__(artifact_manager, tracker)
+    + log_epoch(epoch: int, metrics: dict) : None
+    + {abstract} prepare_data(dataset_manager, config) : None
+    + {abstract} train(config: ExperimentConfig) : TrainingResult
+    + {abstract} evaluate(config: ExperimentConfig) : MetricsDict
+    + {abstract} predict(config: ExperimentConfig) : DetectionResult
+  }
+
+  class YOLOAdapter <<@register_adapter("yolo")>> {
+    - _model : YOLO | None
+    - _data_yaml_path : str | None
+    - _training_result : TrainingResult | None
+    --
+    + prepare_data(dataset_manager, config) : None
+    + train(config: ExperimentConfig) : TrainingResult
+    + evaluate(config: ExperimentConfig) : MetricsDict
+    + predict(config: ExperimentConfig) : DetectionResult
+  }
+
+  class RTDeTRAdapter <<@register_adapter("rtdetr")>> {
+    - _model : RTDETR | None
+    - _data_yaml_path : str | None
+    - _training_result : TrainingResult | None
+    --
+    + prepare_data(dataset_manager, config) : None
+    + train(config: ExperimentConfig) : TrainingResult
+    + evaluate(config: ExperimentConfig) : MetricsDict
+    + predict(config: ExperimentConfig) : DetectionResult
+  }
+
+  class MegaDetectorAdapter <<@register_adapter("megadetector")>> {
+    - _detection_model : MegaDetectorV6 | None
+    - _split_views : dict[str, SplitView]
+    - _cached_predictions : DetectionResult | None
+    --
+    + prepare_data(dataset_manager, config) : None
+    + train(config: ExperimentConfig) : TrainingResult
+    + evaluate(config: ExperimentConfig) : MetricsDict
+    + predict(config: ExperimentConfig) : DetectionResult
+  }
+
+  BaseModelAdapter <|-- YOLOAdapter
+  BaseModelAdapter <|-- RTDeTRAdapter
+  BaseModelAdapter <|-- MegaDetectorAdapter
+}
+
+' ─────────────────────────────────────────────
+' ORCHESTRATION
+' ─────────────────────────────────────────────
+package "Orchestration" {
+
+  class ExperimentRunner {
+    + config : ExperimentConfig
+    + artifact_manager : ArtifactManager
+    + tracker : ExperimentTracker
+    + AdapterClass : type[BaseModelAdapter]
+    + adapter : BaseModelAdapter
+    + dataset_manager : DatasetManager
+    + detections : DetectionResult | None
+    --
+    + __init__(config_path: str)
+    + {static} from_experiment_dir(dir: str) : ExperimentRunner
+    + train() : None
+    + evaluate() : None
+    + predict() : None
+    + visualize_predictions() : None
+    + run_pipeline() : None
+  }
+}
+
+' ─────────────────────────────────────────────
+' VISUALIZATION
+' ─────────────────────────────────────────────
+package "Visualization" {
+
+  class VisualizationPipeline {
+    - _config : ExperimentConfig
+    - _artifact_manager : ArtifactManager
+    - _dataset_manager : DatasetManager
+    --
+    + __init__(config, artifact_manager, dataset_manager)
+    + run(detections: DetectionResult) : None
+  }
+
+  class VideoAnnotator {
+    - _images_dir : Path
+    - _gt_detections : dict[str, Detections] | None
+    - _predictions : dict[str, Detections] | None
+    - _mode : str
+    - _class_names : list[str]
+    --
+    + __init__(images_dir, ...)
+    + annotate_video(output_path: str, fps: float) : None
+    + annotate_single_frame(frame_path: str) : ndarray
+  }
+
+  VisualizationPipeline ..> VideoAnnotator : creates
+}
+
+' ─────────────────────────────────────────────
+' ASSOCIATIONS
+' ─────────────────────────────────────────────
+
+' ExperimentRunner composition
+ExperimentRunner *-- ExperimentConfig
+ExperimentRunner *-- ArtifactManager
+ExperimentRunner *-- ExperimentTracker
+ExperimentRunner *-- DatasetManager
+ExperimentRunner o-- BaseModelAdapter
+
+' Infrastructure dependencies
+DatasetManager --> ExperimentConfig : reads
+DatasetManager "1" *-- "0..*" SplitView : produces
+ArtifactManager --> ExperimentConfig : reads
+ExperimentTracker --> ExperimentConfig : reads
+ExperimentTracker --> ArtifactManager : uses
+
+' Adapter dependencies
+BaseModelAdapter --> ExperimentTracker : logs via
+BaseModelAdapter ..> TrainingResult : returns
+BaseModelAdapter ..> MetricsDict : returns
+BaseModelAdapter ..> DatasetManager : prepare_data()
+
+' Visualization dependencies
+ExperimentRunner ..> VisualizationPipeline : creates
+VisualizationPipeline --> ExperimentConfig : reads
+VisualizationPipeline --> ArtifactManager : writes
+VisualizationPipeline --> DatasetManager : reads
+
+note as N1
+  **DetectionResult** = dict[str, sv.Detections]
+  Key: frame stem (filename without extension)
+  Value: supervision Detections object
+end note
+
+@enduml
