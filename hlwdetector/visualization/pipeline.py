@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import supervision as sv
 
-from hlwdetector.visualization.annotator import VideoAnnotator
+from hlwdetector.visualization.video_annotator import VideoAnnotator
 
 if TYPE_CHECKING:
     from hlwdetector.adapters.base import DetectionResult
@@ -41,14 +41,16 @@ class VisualizationPipeline:
         gt_detections = self._coco_to_sv_detections(split_view)
 
         annotator = VideoAnnotator(
-            images_dir=split_view.images_split_dir,
+            images_dir=split_view.images_dir,
             gt_detections=gt_detections,
             predictions=detections,
             class_names=class_names,
             image_files=split_view.image_paths,
         )
 
-        output_path = str(self._artifact_manager.visualizations_dir)
+        output_path = str(
+            self._artifact_manager.visualizations_dir / f"{self._config.config_name}_annotated.mp4"
+        )
         annotator.annotate_video(
             output_path=output_path,
             fps=self._config.visualization_fps,

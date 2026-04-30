@@ -1,17 +1,16 @@
-from pprint import pprint
-
-from pathlib import Path
+import time
 
 from hlwdetector.runner import ExperimentRunner
-from utilities.video_dataset_prep_tools import extract_frames_by_split
 
 
-video_dir = Path("data/h23/Videos")  # directory containing annotated video dataset
-split_json = Path("data/h23/split.json")  # COCO annotations JSON
-out_dir = Path("data/h23/images")  # Path to extract split images
+start_total = time.time()
 
-#extract_frames_by_split(split_json, video_dir, out_dir)
+#for config in ["configs/yolo11_h23.yaml", "configs/yolo26_h23.yaml", "configs/rtdetr_h23.yaml"]:
+for config in ["configs/rtdetr_h23.yaml"]:
+    start = time.time()
+    ExperimentRunner(config).run_pipeline()
+    elapsed = (time.time() - start) / 60
+    print(f"[{config}] finished in {elapsed:.2f} min")
 
-yolo11_config_yaml = "configs/yolo11_h23_resume_yolo11_h23_20260402_004059.yaml"
-runner = ExperimentRunner(yolo11_config_yaml)
-runner.run()
+total_elapsed = (time.time() - start_total) / 60
+print(f"\nTotal time elapsed: {total_elapsed:.2f} min")

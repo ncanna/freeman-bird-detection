@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ExperimentConfig:
     model_name: str                # "yolo11" | "megadetector"
-    experiment_name: str
+    config_name: str
     hyperparameters: dict[str, Any]  # model-specific; adapter interprets
 
     # Canonical data inputs (COCO JSON + image paths)
@@ -28,7 +28,6 @@ class ExperimentConfig:
     random_seed: int = 42
 
     wandb_project: str | None = None
-    wandb_run_name: str | None = None
     resume_experiment: str | None = None
     resume_from: str | None = None  # speficies model weights to load and resume training from
 

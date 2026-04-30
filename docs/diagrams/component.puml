@@ -1,0 +1,152 @@
+@startuml hlwdetector-component
+
+skinparam componentStyle rectangle
+skinparam defaultFontSize 12
+skinparam backgroundColor #FAFAFA
+skinparam component {
+    BackgroundColor #DDEEFF
+    BorderColor #336699
+    FontColor #1A1A1A
+}
+skinparam package {
+    BackgroundColor #F0F4FF
+    BorderColor #6680AA
+}
+skinparam interface {
+    BackgroundColor #FFFDE7
+    BorderColor #C8A800
+}
+skinparam arrow {
+    Color #444444
+    FontColor #444444
+}
+
+title hlwdetector — Component Diagram
+
+'─────────────────────────────────────────────────────────
+' Entry points
+'─────────────────────────────────────────────────────────
+package "Entry Points" {
+    [ExperimentRunner] <<runner>>
+    [CLI\npython -m hlwdetector.runner] <<cli>>
+}
+
+[CLI\npython -m hlwdetector.runner] --> [ExperimentRunner]
+
+'─────────────────────────────────────────────────────────
+' Core framework
+'─────────────────────────────────────────────────────────
+package "hlwdetector (Core)" {
+
+    package "Config & Registry" {
+        [ExperimentConfig] <<dataclass>>
+        [AdapterRegistry] <<registry>>
+    }
+
+    package "Data Layer" {
+        [DatasetManager] <<manager>>
+        note right of [DatasetManager]
+          Loads COCO JSON
+          Partitions into
+          SplitView objects
+        end note
+    }
+
+    package "Artifact & Tracking" {
+        [ArtifactManager] <<manager>>
+        [ExperimentTracker] <<tracker>>
+    }
+
+    package "Adapters" {
+        interface "BaseModelAdapter" as BMA
+        [YOLOAdapter] <<adapter>>
+        [RTDETRAdapter] <<adapter>>
+        [MegaDetectorAdapter] <<adapter>>
+    }
+
+    package "Visualization" {
+        [VisualizationPipeline] <<pipeline>>
+        [VideoAnnotator] <<annotator>>
+    }
+}
+
+'─────────────────────────────────────────────────────────
+' External dependencies
+'─────────────────────────────────────────────────────────
+package "External Libraries" {
+    [ultralytics] <<library>>
+    [supervision] <<library>>
+    [pycocotools\nCOCOeval] <<library>>
+    [PytorchWildlife] <<library>>
+    [wandb] <<library>>
+    [opencv-python] <<library>>
+    [torch / torchvision] <<library>>
+}
+
+'─────────────────────────────────────────────────────────
+' Data stores
+'─────────────────────────────────────────────────────────
+package "File System" {
+    database "COCO JSON\n(instances_merged.json)" as CocoJSON
+    database "Split JSON\n(split_h23.json)" as SplitJSON
+    database "Images Dir\n(data/h23/images/)" as ImagesDir
+    database "Outputs Dir\n(outputs/run/)" as OutputsDir
+    database "Config YAML\n(configs/*.yaml)" as ConfigYAML
+}
+
+'─────────────────────────────────────────────────────────
+' Relationships — Runner orchestration
+'─────────────────────────────────────────────────────────
+[ExperimentRunner] --> [ExperimentConfig]       : loads
+[ExperimentRunner] --> [AdapterRegistry]        : resolves adapter
+[ExperimentRunner] --> [DatasetManager]         : creates
+[ExperimentRunner] --> [ArtifactManager]        : creates
+[ExperimentRunner] --> [ExperimentTracker]      : creates
+[ExperimentRunner] --> [VisualizationPipeline]  : calls visualize
+
+'─────────────────────────────────────────────────────────
+' Adapter registry
+'─────────────────────────────────────────────────────────
+[AdapterRegistry] --> BMA                : registered via @register_adapter
+BMA <|.. [YOLOAdapter]
+BMA <|.. [RTDETRAdapter]
+BMA <|.. [MegaDetectorAdapter]
+
+'─────────────────────────────────────────────────────────
+' Adapter → library bindings
+'─────────────────────────────────────────────────────────
+[YOLOAdapter]          --> [ultralytics]
+[RTDETRAdapter]        --> [ultralytics]
+[MegaDetectorAdapter]  --> [PytorchWildlife]
+[MegaDetectorAdapter]  --> [torch / torchvision]
+
+'─────────────────────────────────────────────────────────
+' Data flow
+'─────────────────────────────────────────────────────────
+[ExperimentConfig]  <.. ConfigYAML       : parsed from
+[DatasetManager]    <.. CocoJSON         : loads
+[DatasetManager]    <.. SplitJSON        : partitions by
+[DatasetManager]    <.. ImagesDir        : resolves frames from
+[ArtifactManager]   --> OutputsDir       : writes artifacts
+
+'─────────────────────────────────────────────────────────
+' Evaluation & prediction
+'─────────────────────────────────────────────────────────
+[YOLOAdapter]       --> [pycocotools\nCOCOeval] : evaluate()
+[RTDETRAdapter]     --> [pycocotools\nCOCOeval] : evaluate()
+BMA                 --> [supervision]           : sv.Detections (predict)
+
+'─────────────────────────────────────────────────────────
+' Tracking
+'─────────────────────────────────────────────────────────
+[ExperimentTracker] --> [wandb]          : W&B logging (optional)
+[ExperimentTracker] --> OutputsDir      : writes metrics.json
+
+'─────────────────────────────────────────────────────────
+' Visualization
+'─────────────────────────────────────────────────────────
+[VisualizationPipeline] --> [VideoAnnotator]
+[VideoAnnotator]        --> [opencv-python]  : reads frames / writes MP4
+[VideoAnnotator]        --> OutputsDir       : saves visualizations/
+
+@enduml

@@ -19,7 +19,7 @@ class SplitView:
     split: str
     coco_json_path: str
     video_stems: list[str]       # from split.json
-    images_split_dir: str        # flat images_dir — same for all splits
+    images_dir: str              # directory containing extracted frames from all videos
     images: list[dict]           # COCO image dicts filtered to this split
     annotations: list[dict]      # COCO annotation dicts for filtered images
     categories: list[dict]
@@ -27,7 +27,7 @@ class SplitView:
     @property
     def image_paths(self) -> list[Path]:
         """Absolute paths to the image files belonging to this split."""
-        base = Path(self.images_split_dir)
+        base = Path(self.images_dir)
         return [base / img["file_name"] for img in self.images]
 
 
@@ -60,7 +60,7 @@ class DatasetManager:
                 split=split_name,
                 coco_json_path=self._config.coco_json,
                 video_stems=video_stems,
-                images_split_dir=str(images_base),
+                images_dir=str(images_base),
                 images=images,
                 annotations=annotations,
                 categories=categories,
