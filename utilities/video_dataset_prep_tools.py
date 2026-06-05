@@ -200,6 +200,60 @@ def split_report(df, videos, name):
     )
 
 
+def remove_multi_bird_frames(coco_json_path: str, output_path: str, bird_category_name: str = "Bird") -> None:
+    """
+    Remove all frames containing more than one bird annotation from a COCO dataset
+    and write the filtered result to output_path.
+
+    Parameters
+    ----------
+    coco_json_path : str
+        Path to the input COCO-format JSON annotation file.
+    output_path : str
+        Path where the filtered COCO JSON will be written.
+    bird_category_name : str
+        Category name to treat as "bird". Case-insensitive. Default "Bird".
+    """
+    with open(coco_json_path) as f:
+        data = json.load(f)
+
+    bird_cat_id = None
+    for cat in data["categories"]:
+        if cat["name"].lower() == bird_category_name.lower():
+            bird_cat_id = cat["id"]
+            break
+    if bird_cat_id is None:
+        raise ValueError(
+            f"Category '{bird_category_name}' not found. "
+            f"Available: {[c['name'] for c in data['categories']]}"
+        )
+
+    # Count bird annotations per image
+    bird_count: dict[int, int] = defaultdict(int)
+    for ann in data["annotations"]:
+        if ann["category_id"] == bird_cat_id:
+            bird_count[ann["image_id"]] += 1
+
+    multi_bird_ids: set[int] = {img_id for img_id, count in bird_count.items() if count > 1}
+
+    kept_images = [img for img in data["images"] if img["id"] not in multi_bird_ids]
+    kept_image_ids = {img["id"] for img in kept_images}
+    kept_annotations = [ann for ann in data["annotations"] if ann["image_id"] in kept_image_ids]
+
+    filtered = {**data, "images": kept_images, "annotations": kept_annotations}
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, "w") as f:
+        json.dump(filtered, f)
+
+    removed = len(data["images"]) - len(kept_images)
+    print(
+        f"Removed {removed} frames with multiple bird detections. "
+        f"{len(kept_images)} frames remaining → {output_path}"
+    )
+
+
 def extract_frames_by_split(split_json, video_dir, out_dir):
     with open(split_json, "r") as f:
             splits: dict[str, list[str]] = json.load(f)

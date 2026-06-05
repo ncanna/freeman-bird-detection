@@ -5,8 +5,8 @@ from hlwdetector.runner import ExperimentRunner
 
 start_total = time.time()
 
-#for config in ["configs/yolo11_h23.yaml", "configs/yolo26_h23.yaml", "configs/rtdetr_h23.yaml"]:
-for config in ["configs/rtdetr_h23.yaml"]:
+for config in ["configs/yolo11_h23_full.yaml", "configs/yolo26_h23_full.yaml", "configs/rtdetr_h23_full.yaml"]:
+#for config in ["configs/rtdetr_h23.yaml"]:
     start = time.time()
     ExperimentRunner(config).run_pipeline()
     elapsed = (time.time() - start) / 60

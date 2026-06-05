@@ -1,13 +1,13 @@
-config_name: yolo26_h23
-model_name: yolo
+config_name: rtdetr_h23
+model_name: rtdetr
 hyperparameters:
-  model_weights: yolo26n.pt
-  epochs: 5
+  model_weights: rtdetr-l.pt
+  epochs: 100
   imgsz: 640
   batch: 32
   device: "0"
-coco_json: ../data/h23/instances_subset.json
-split_json: ../data/h23/split_h23_subset.json
+coco_json: ../data/h23/instances_merged.json
+split_json: ../data/h23/split.json
 images_dir: ../data/h23/images
 output_dir: ../outputs
 wandb_project: freeman-bird-detection
