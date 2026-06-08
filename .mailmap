@@ -1,0 +1,9 @@
+# Maps machine-generated / incorrect author identities to the correct one.
+# Format: Proper Name <proper@email> <commit@email>
+# Affects display only (git log, shortlog, blame, GitHub) — does not rewrite history.
+
+Rebecca Rivera <beccaarivera@gmail.com> <rrivera73@gatech.edu>
+Rebecca Rivera <beccaarivera@gmail.com> <rrivera73@atl1-1-01-005-9-0.pace.gatech.edu>
+Rebecca Rivera <beccaarivera@gmail.com> <rrivera73@atl1-1-01-005-2-2.pace.gatech.edu>
+Rebecca Rivera <beccaarivera@gmail.com> <rrivera73@atl1-1-01-005-11-0.pace.gatech.edu>
+Rebecca Rivera <beccaarivera@gmail.com> <becca@MobileMalk.localdomain>
