@@ -213,7 +213,8 @@ class VideoAnnotator:
         out_path = Path(output_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
 
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        # fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        fourcc = cv2.VideoWriter_fourcc(*"avc1") # changed so it will load on wandb
         writer = cv2.VideoWriter(str(out_path), fourcc, fps, (w, h))
 
         for img_path in self._image_files:

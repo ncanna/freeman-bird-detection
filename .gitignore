@@ -8,3 +8,6 @@ output/
 slurm_and_logs/
 data
 outputs
+wandb/
+runs/
+slurm/logs/
