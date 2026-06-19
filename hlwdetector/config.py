@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+from hlwdetector import paths
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +37,9 @@ class ExperimentConfig:
     visualize_split: str = "test"
     visualization_fps: float = 29.0
 
+    # Fields holding filesystem paths — serialized repo-relative, resolved on load.
+    PATH_FIELDS = ("coco_json", "images_dir", "split_json", "output_dir", "resume_from")
+
     @classmethod
     def from_yaml(cls, path: str) -> "ExperimentConfig":
         """Load config from YAML, resolving all relative paths against the YAML's parent dir."""
@@ -52,11 +58,32 @@ class ExperimentConfig:
             return str(p)
 
         # Resolve all path fields
-        for key in ("coco_json", "images_dir", "split_json", "output_dir", "resume_from"):
+        for key in cls.PATH_FIELDS:
             if key in raw and raw[key] is not None:
                 raw[key] = resolve(raw[key])
 
         return cls(**raw)
+
+    def to_serializable_dict(self) -> dict[str, Any]:
+        """Dict for config.json with path fields stored relative to the repo root."""
+        data = dataclasses.asdict(self)
+        for key in self.PATH_FIELDS:
+            if data.get(key) is not None:
+                data[key] = paths.to_repo_rel(data[key])
+        return data
+
+    @classmethod
+    def from_stored_dict(cls, raw: dict[str, Any]) -> "ExperimentConfig":
+        """Reconstruct from a stored config.json dict, resolving repo-relative paths.
+
+        Unknown keys (e.g. wandb_run_id, resumed_in) are ignored.
+        """
+        valid_fields = {f.name for f in dataclasses.fields(cls)}
+        kwargs = {k: v for k, v in raw.items() if k in valid_fields}
+        for key in cls.PATH_FIELDS:
+            if kwargs.get(key) is not None:
+                kwargs[key] = str(paths.resolve(kwargs[key]))
+        return cls(**kwargs)
 
     def validate(self) -> None:
         """Raise clear errors if prerequisites are missing."""
