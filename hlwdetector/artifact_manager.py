@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 from datetime import datetime
@@ -10,6 +11,8 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import supervision as sv
+
+from hlwdetector import paths
 
 if TYPE_CHECKING:
     from hlwdetector.adapters.base import MetricsDict, TrainingResult
@@ -96,7 +99,7 @@ class ArtifactManager:
         config_path = original_dir / "config.json"
         try:
             data = json.loads(config_path.read_text())
-            data["resumed_in"] = str(new_dir)
+            data["resumed_in"] = paths.to_repo_rel(new_dir)
             config_path.write_text(json.dumps(data, indent=2))
             logger.info("Stamped resumed_in on: %s", config_path)
         except (FileNotFoundError, json.JSONDecodeError) as exc:
@@ -107,21 +110,22 @@ class ArtifactManager:
     # ------------------------------------------------------------------ #
 
     def save_config(self, config: "ExperimentConfig", wandb_run_id: str | None = None) -> None:
-        """Write config.json (includes wandb_run_id if W&B is active)."""
-        import dataclasses
-        data = dataclasses.asdict(config)
+        """Write config.json with repo-relative paths (includes wandb_run_id if W&B is active)."""
+        data = config.to_serializable_dict()
         if wandb_run_id is not None:
             data["wandb_run_id"] = wandb_run_id
         self._write_json("config.json", data)
 
     def save_model_info(self, result: "TrainingResult") -> None:
-        """Write model.json with best/last weights paths."""
-        import dataclasses
-        self._write_json("model.json", dataclasses.asdict(result))
+        """Write model.json with run/weights paths stored relative to the repo root."""
+        data = dataclasses.asdict(result)
+        for key in ("run_dir", "best_weights_path", "last_weights_path"):
+            if data.get(key) is not None:
+                data[key] = paths.to_repo_rel(data[key])
+        self._write_json("model.json", data)
 
     def save_metrics(self, metrics: "MetricsDict") -> None:
         """Write metrics.json with evaluation results."""
-        import dataclasses
         self._write_json("metrics.json", dataclasses.asdict(metrics))
 
     def save_detections(self, detections: dict[str, sv.Detections]) -> None:

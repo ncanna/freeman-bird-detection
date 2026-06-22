@@ -46,7 +46,6 @@ class MegaDetectorAdapter(BaseModelAdapter):
         self,
         dataset_manager: "DatasetManager",
         config: "ExperimentConfig",
-        work_dir: str,
     ) -> None:
         """Validate that the images directory exists and store split views."""
         images_dir = Path(config.images_dir)
