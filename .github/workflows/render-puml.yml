@@ -1,0 +1,39 @@
+name: Render PlantUML diagrams
+
+# Re-render docs/diagrams/*.puml to SVG whenever a diagram source changes,
+# then commit the regenerated SVGs back so the README always shows the latest.
+on:
+  push:
+    paths:
+      - 'docs/diagrams/**.puml'
+      - '.github/workflows/render-puml.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Render with the full diagrams directory mounted so `!include _theme.puml`
+      # and the C4 stdlib includes resolve correctly. Output names come from each
+      # file's `@startuml <name>` directive (e.g. hlwdetector-component.svg).
+      - name: Render diagrams to SVG
+        run: |
+          docker run --rm -v "$PWD/docs/diagrams:/work" -w /work \
+            plantuml/plantuml -tsvg context.puml component.puml class-diagram.puml
+
+      - name: Commit updated SVGs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/diagrams/*.svg
+          if git diff --staged --quiet; then
+            echo "No diagram changes to commit."
+          else
+            git commit -m "ci: re-render PlantUML diagrams to SVG"
+            git push origin HEAD:${{ github.ref_name }}
+          fi

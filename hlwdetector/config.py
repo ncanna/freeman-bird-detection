@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ExperimentConfig:
-    model_name: str                # "yolo11" | "megadetector"
+    model_name: str                # "yolo11" | "rtdetr"
     config_name: str
     hyperparameters: dict[str, Any]  # model-specific; adapter interprets
 

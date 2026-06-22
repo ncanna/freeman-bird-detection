@@ -44,8 +44,6 @@ class ExperimentTracker:
         wandb_run_id: str | None = None,
     ) -> None:
         try:
-            import wandb  # type: ignore
-
             init_kwargs: dict = {
                 "project": config.wandb_project,
                 "name": artifact_manager.experiment_name,
