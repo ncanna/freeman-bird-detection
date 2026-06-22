@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Georgia Tech Mountain Bird Lab — automated bird detection in camera trap videos from the Freeman site. The repository is a full ML experimentation framework (`hlwdetector`) for training and evaluating multiple detection models (YOLO, RT-DETR, MegaDetector) on camera trap footage.
+Georgia Tech Mountain Bird Lab — automated bird detection in camera trap videos from the Freeman site. The repository is a full ML experimentation framework (`hlwdetector`) for training and evaluating detection models (YOLO, RT-DETR) on camera trap footage.
+
+> **Ignore the `archive/` directory.** It holds legacy code, models, and annotations that are no longer part of the framework (including the retired MegaDetector adapter). Do not read, edit, reference, or import from `archive/` when working on the active codebase.
 
 ## Repository Structure
 
@@ -20,7 +22,6 @@ hlwdetector/              # Core framework package
     base.py               # BaseModelAdapter ABC
     yolo_adapter.py       # YOLO11/YOLO26 adapter
     rtdetr_adapter.py     # RT-DETR adapter
-    megadetector_adapter.py  # MegaDetector V6 (pretrained, no fine-tuning)
   visualization/
     pipeline.py           # VisualizationPipeline
     video_annotator.py    # Overlays GT + predictions and writes MP4
@@ -30,12 +31,8 @@ utilities/                # Data prep and annotation tools
   video_dataset_prep_tools.py  # Frame extraction, stratified splitting
   visualization.py             # Additional visualization helpers
 
-configs/                  # YAML experiment configurations
-  yolo11_h23.yaml
-  yolo26_h23.yaml
-  rtdetr_h23.yaml
-  yolo11_h23_resume.yaml
-  yolo26_h23_resume.yaml
+configs/                  # YAML experiment configurations, one per model/dataset/run variant
+                          # (e.g. <model>_<dataset>_<full|subset|resume>.yaml)
 
 data/
   h23/                    # Main dataset (extracted frames + COCO annotations)
@@ -58,10 +55,13 @@ outputs/                  # Experiment results (one directory per run)
     work/                 # YOLO training artifacts (train.txt, yolo.yaml, runs/)
     visualizations/       # Annotated MP4 video outputs
 
+docs/
+  diagrams/               # PlantUML architecture diagrams (context, component, class)
 models/                   # Pre-trained model weights
 notebooks/                # Jupyter notebooks
-archive/                  # Legacy code
+archive/                  # Legacy code — IGNORE (not part of the active framework)
 run_experiments.py        # Example runner script
+run_experiments.ipynb     # Notebook runner
 ```
 
 ## Development Commands
@@ -104,7 +104,7 @@ All fields with relative paths are resolved relative to the YAML file location.
 
 ```yaml
 config_name: yolo11_h23          # Unique identifier (used in output dir name)
-model_name: yolo                  # Registered adapter name: yolo | rtdetr | megadetector
+model_name: yolo                  # Registered adapter name: yolo | rtdetr
 hyperparameters:
   model_weights: yolo11n.pt       # Weights filename or path
   epochs: 50
@@ -162,7 +162,6 @@ Lists video stems; frames are matched at runtime by filename prefix.
 - **ultralytics** — YOLO and RT-DETR model training and inference
 - **supervision** — `sv.Detections` used as the standard detection container throughout
 - **pycocotools** — COCO evaluation (COCOeval)
-- **PytorchWildlife** — MegaDetector V6 wrapper
 - **wandb** — experiment tracking (optional)
 - **torch/torchvision** — deep learning framework
 - **opencv-python** — video and frame I/O

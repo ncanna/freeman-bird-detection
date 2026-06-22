@@ -1,22 +1,16 @@
 @startuml hlwdetector-class-diagram
 
-skinparam classAttributeIconSize 0
-skinparam classFontSize 12
-skinparam classHeaderBackgroundColor #E8F4F8
-skinparam classBorderColor #4A90D9
-skinparam arrowColor #555555
-skinparam packageBorderColor #AAAAAA
-skinparam packageBackgroundColor #e7e9d4
-skinparam abstractClassBackgroundColor #e2dbcb
-skinparam stereotypeCBackgroundColor #D5E8D4
+!include _theme.puml
 skinparam linetype ortho
+
+title hlwdetector — Class Diagram
 
 ' ─────────────────────────────────────────────
 ' DATA / VALUE OBJECTS
 ' ─────────────────────────────────────────────
 package "Data Objects" {
 
-  class ExperimentConfig <<dataclass>> {
+  class ExperimentConfig <<dataclass>> $data {
     + config_name : str
     + model_name : str
     + hyperparameters : dict[str, Any]
@@ -30,12 +24,15 @@ package "Data Objects" {
     + resume_from : str | None
     + visualize_split : str
     + visualization_fps : float
+    + {static} PATH_FIELDS : tuple[str, ...]
     --
     + {static} from_yaml(path: str) : ExperimentConfig
+    + to_serializable_dict() : dict[str, Any]
+    + {static} from_stored_dict(raw: dict) : ExperimentConfig
     + validate() : None
   }
 
-  class SplitView <<dataclass>> {
+  class SplitView <<dataclass>> $data {
     + split : str
     + coco_json_path : str
     + video_stems : list[str]
@@ -47,14 +44,14 @@ package "Data Objects" {
     + image_paths : list[Path]  <<property>>
   }
 
-  class TrainingResult <<dataclass>> {
+  class TrainingResult <<dataclass>> $data {
     + run_dir : str
     + best_weights_path : str | None
     + last_weights_path : str | None
     + training_metrics : dict
   }
 
-  class MetricsDict <<dataclass>> {
+  class MetricsDict <<dataclass>> $data {
     + precision : float
     + recall : float
     + f1 : float
@@ -70,7 +67,14 @@ package "Data Objects" {
 ' ─────────────────────────────────────────────
 package "Core Infrastructure" {
 
-  class DatasetManager {
+  class paths <<module>> $infra {
+    + {static} REPO_ROOT : Path
+    --
+    + {static} to_repo_rel(path: str | Path) : str
+    + {static} resolve(path: str | Path) : Path
+  }
+
+  class DatasetManager $infra {
     - _config : ExperimentConfig
     - _split_views : dict[str, SplitView]
     --
@@ -78,7 +82,7 @@ package "Core Infrastructure" {
     + get_split(split: str) : SplitView
   }
 
-  class ArtifactManager {
+  class ArtifactManager $infra {
     + experiment_name : str
     + experiment_dir : Path
     + work_dir : Path
@@ -95,7 +99,7 @@ package "Core Infrastructure" {
     + load_config_json() : dict
   }
 
-  class ExperimentTracker {
+  class ExperimentTracker $infra {
     - _config : ExperimentConfig
     - _artifact_manager : ArtifactManager
     - _metrics : dict
@@ -116,7 +120,7 @@ package "Core Infrastructure" {
 ' ─────────────────────────────────────────────
 package "Model Adapters" {
 
-  abstract class BaseModelAdapter {
+  abstract class BaseModelAdapter $adapter {
     + experiment_dir : Path
     + work_dir : Path
     # _tracker : ExperimentTracker
@@ -129,7 +133,7 @@ package "Model Adapters" {
     + {abstract} predict(config: ExperimentConfig) : DetectionResult
   }
 
-  class YOLOAdapter <<@register_adapter("yolo")>> {
+  class YOLOAdapter <<@register_adapter("yolo")>> $adapter {
     - _model : YOLO | None
     - _data_yaml_path : str | None
     - _training_result : TrainingResult | None
@@ -140,7 +144,7 @@ package "Model Adapters" {
     + predict(config: ExperimentConfig) : DetectionResult
   }
 
-  class RTDeTRAdapter <<@register_adapter("rtdetr")>> {
+  class RTDeTRAdapter <<@register_adapter("rtdetr")>> $adapter {
     - _model : RTDETR | None
     - _data_yaml_path : str | None
     - _training_result : TrainingResult | None
@@ -151,20 +155,8 @@ package "Model Adapters" {
     + predict(config: ExperimentConfig) : DetectionResult
   }
 
-  class MegaDetectorAdapter <<@register_adapter("megadetector")>> {
-    - _detection_model : MegaDetectorV6 | None
-    - _split_views : dict[str, SplitView]
-    - _cached_predictions : DetectionResult | None
-    --
-    + prepare_data(dataset_manager, config) : None
-    + train(config: ExperimentConfig) : TrainingResult
-    + evaluate(config: ExperimentConfig) : MetricsDict
-    + predict(config: ExperimentConfig) : DetectionResult
-  }
-
   BaseModelAdapter <|-- YOLOAdapter
   BaseModelAdapter <|-- RTDeTRAdapter
-  BaseModelAdapter <|-- MegaDetectorAdapter
 }
 
 ' ─────────────────────────────────────────────
@@ -172,7 +164,7 @@ package "Model Adapters" {
 ' ─────────────────────────────────────────────
 package "Orchestration" {
 
-  class ExperimentRunner {
+  class ExperimentRunner $orch {
     + config : ExperimentConfig
     + artifact_manager : ArtifactManager
     + tracker : ExperimentTracker
@@ -196,7 +188,7 @@ package "Orchestration" {
 ' ─────────────────────────────────────────────
 package "Visualization" {
 
-  class VisualizationPipeline {
+  class VisualizationPipeline $viz {
     - _config : ExperimentConfig
     - _artifact_manager : ArtifactManager
     - _dataset_manager : DatasetManager
@@ -205,7 +197,7 @@ package "Visualization" {
     + run(detections: DetectionResult) : None
   }
 
-  class VideoAnnotator {
+  class VideoAnnotator $viz {
     - _images_dir : Path
     - _gt_detections : dict[str, Detections] | None
     - _predictions : dict[str, Detections] | None
@@ -237,6 +229,12 @@ DatasetManager "1" *-- "0..*" SplitView : produces
 ArtifactManager --> ExperimentConfig : reads
 ExperimentTracker --> ExperimentConfig : reads
 ExperimentTracker --> ArtifactManager : uses
+
+' Repo-relative path serialization / resolution
+ExperimentConfig ..> paths : serialize / resolve\npath fields
+ArtifactManager ..> paths : repo-rel weights\n& resume paths
+YOLOAdapter ..> paths : resolve best.pt
+RTDeTRAdapter ..> paths : resolve best.pt
 
 ' Adapter dependencies
 BaseModelAdapter --> ExperimentTracker : logs via

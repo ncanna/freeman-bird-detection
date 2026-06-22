@@ -1,25 +1,6 @@
 @startuml hlwdetector-component
 
-skinparam componentStyle rectangle
-skinparam defaultFontSize 12
-skinparam backgroundColor #FAFAFA
-skinparam component {
-    BackgroundColor #DDEEFF
-    BorderColor #336699
-    FontColor #1A1A1A
-}
-skinparam package {
-    BackgroundColor #F0F4FF
-    BorderColor #6680AA
-}
-skinparam interface {
-    BackgroundColor #FFFDE7
-    BorderColor #C8A800
-}
-skinparam arrow {
-    Color #444444
-    FontColor #444444
-}
+!include _theme.puml
 
 title hlwdetector — Component Diagram
 
@@ -27,8 +8,8 @@ title hlwdetector — Component Diagram
 ' Entry points
 '─────────────────────────────────────────────────────────
 package "Entry Points" {
-    [ExperimentRunner] <<runner>>
-    [CLI\npython -m hlwdetector.runner] <<cli>>
+    [ExperimentRunner] <<runner>> $orch
+    [CLI\npython -m hlwdetector.runner] <<cli>> $orch
 }
 
 [CLI\npython -m hlwdetector.runner] --> [ExperimentRunner]
@@ -38,13 +19,14 @@ package "Entry Points" {
 '─────────────────────────────────────────────────────────
 package "hlwdetector (Core)" {
 
-    package "Config & Registry" {
-        [ExperimentConfig] <<dataclass>>
-        [AdapterRegistry] <<registry>>
+    package "Config & Registry" $subpkg {
+        [ExperimentConfig] <<dataclass>> $data
+        [AdapterRegistry] <<registry>> $infra
+        [paths\n(repo-root anchoring)] <<module>> $infra
     }
 
-    package "Data Layer" {
-        [DatasetManager] <<manager>>
+    package "Data Layer" $subpkg {
+        [DatasetManager] <<manager>> $infra
         note right of [DatasetManager]
           Loads COCO JSON
           Partitions into
@@ -52,21 +34,20 @@ package "hlwdetector (Core)" {
         end note
     }
 
-    package "Artifact & Tracking" {
-        [ArtifactManager] <<manager>>
-        [ExperimentTracker] <<tracker>>
+    package "Artifact & Tracking" $subpkg {
+        [ArtifactManager] <<manager>> $infra
+        [ExperimentTracker] <<tracker>> $infra
     }
 
-    package "Adapters" {
+    package "Adapters" $subpkg {
         interface "BaseModelAdapter" as BMA
-        [YOLOAdapter] <<adapter>>
-        [RTDETRAdapter] <<adapter>>
-        [MegaDetectorAdapter] <<adapter>>
+        [YOLOAdapter] <<adapter>> $adapter
+        [RTDETRAdapter] <<adapter>> $adapter
     }
 
-    package "Visualization" {
-        [VisualizationPipeline] <<pipeline>>
-        [VideoAnnotator] <<annotator>>
+    package "Visualization" $subpkg {
+        [VisualizationPipeline] <<pipeline>> $viz
+        [VideoAnnotator] <<annotator>> $viz
     }
 }
 
@@ -74,13 +55,12 @@ package "hlwdetector (Core)" {
 ' External dependencies
 '─────────────────────────────────────────────────────────
 package "External Libraries" {
-    [ultralytics] <<library>>
-    [supervision] <<library>>
-    [pycocotools\nCOCOeval] <<library>>
-    [PytorchWildlife] <<library>>
-    [wandb] <<library>>
-    [opencv-python] <<library>>
-    [torch / torchvision] <<library>>
+    [ultralytics] <<library>> $ext
+    [supervision] <<library>> $ext
+    [pycocotools\nCOCOeval] <<library>> $ext
+    [wandb] <<library>> $ext
+    [opencv-python] <<library>> $ext
+    [torch / torchvision] <<library>> $ext
 }
 
 '─────────────────────────────────────────────────────────
@@ -110,15 +90,13 @@ package "File System" {
 [AdapterRegistry] --> BMA                : registered via @register_adapter
 BMA <|.. [YOLOAdapter]
 BMA <|.. [RTDETRAdapter]
-BMA <|.. [MegaDetectorAdapter]
 
 '─────────────────────────────────────────────────────────
 ' Adapter → library bindings
 '─────────────────────────────────────────────────────────
 [YOLOAdapter]          --> [ultralytics]
 [RTDETRAdapter]        --> [ultralytics]
-[MegaDetectorAdapter]  --> [PytorchWildlife]
-[MegaDetectorAdapter]  --> [torch / torchvision]
+[ultralytics]          --> [torch / torchvision]
 
 '─────────────────────────────────────────────────────────
 ' Data flow
@@ -128,6 +106,14 @@ BMA <|.. [MegaDetectorAdapter]
 [DatasetManager]    <.. SplitJSON        : partitions by
 [DatasetManager]    <.. ImagesDir        : resolves frames from
 [ArtifactManager]   --> OutputsDir       : writes artifacts
+
+'─────────────────────────────────────────────────────────
+' Portable path serialization (repo-relative store / resolve)
+'─────────────────────────────────────────────────────────
+[ExperimentConfig]   ..> [paths\n(repo-root anchoring)] : serialize / resolve path fields
+[ArtifactManager]    ..> [paths\n(repo-root anchoring)] : store repo-rel weights & resume paths
+[YOLOAdapter]        ..> [paths\n(repo-root anchoring)] : resolve best.pt at runtime
+[RTDETRAdapter]      ..> [paths\n(repo-root anchoring)] : resolve best.pt at runtime
 
 '─────────────────────────────────────────────────────────
 ' Evaluation & prediction
