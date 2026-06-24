@@ -52,6 +52,11 @@ class ExperimentTracker:
                 "dir": Path(artifact_manager.experiment_dir)
             }
 
+            # Pin the team/group entity so runs don't land in the personal
+            # workspace when the account default resolves elsewhere.
+            if config.wandb_entity is not None:
+                init_kwargs["entity"] = config.wandb_entity
+
             if wandb_run_id is not None:
                 # Attaching to an existing experiment (e.g. eval after training)
                 init_kwargs["resume"] = "must"

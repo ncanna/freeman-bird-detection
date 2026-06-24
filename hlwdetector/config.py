@@ -28,6 +28,7 @@ class ExperimentConfig:
     random_seed: int = 42
 
     wandb_project: str | None = None
+    wandb_entity: str | None = None  # W&B team/group entity; None -> account default
     resume_experiment: str | None = None
     resume_from: str | None = None  # speficies model weights to load and resume training from
 

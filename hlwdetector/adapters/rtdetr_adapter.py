@@ -125,6 +125,13 @@ class RTDeTRAdapter(BaseModelAdapter):
         imgsz = hp.get("imgsz")
         batch = hp.get("batch")
         device = hp.get("device")
+        # RT-DETR's transformer decoder is unstable under AMP on the cu130/torch
+        # 2.12 stack: fp16 GEMMs in the decoder crash with
+        # CUBLAS_STATUS_EXECUTION_FAILED. Default AMP off; override via config.
+        amp = hp.get("amp", False)
+        # Cap dataloader workers to the SLURM CPU allocation; the ultralytics
+        # default oversubscribes (16 procs on an 8-CPU job) and inflates RAM.
+        workers = hp.get("workers", 4)
 
         runs_dir = str(Path(self.work_dir) / "runs")
         settings.update({
@@ -142,6 +149,8 @@ class RTDeTRAdapter(BaseModelAdapter):
                 imgsz=imgsz,
                 batch=batch,
                 device=device,
+                amp=amp,
+                workers=workers,
                 project=runs_dir,
                 name="train",
             )
@@ -155,6 +164,8 @@ class RTDeTRAdapter(BaseModelAdapter):
                 imgsz=imgsz,
                 batch=batch,
                 device=device,
+                amp=amp,
+                workers=workers,
                 project=runs_dir,
                 name="train",
             )

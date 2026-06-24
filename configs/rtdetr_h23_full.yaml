@@ -2,14 +2,16 @@ config_name: rtdetr_h23
 model_name: rtdetr
 hyperparameters:
   model_weights: rtdetr-l.pt
-  epochs: 100
+  epochs: 18   # ~44 min/epoch (fp32, AMP off) -> fits train+eval+viz in the 16h ice-gpu wall
   imgsz: 640
   batch: 32
   device: "0"
+  amp: false   # RT-DETR decoder crashes under AMP on cu130/torch2.12 (CUBLAS fp16)
 coco_json: ../data/h23/instances_merged.json
 split_json: ../data/h23/split.json
 images_dir: ../data/h23/images
 output_dir: ../outputs
 wandb_project: freeman-bird-detection
+wandb_entity: gatech-birdlab
 #resume_experiment: yolo26_h23_20260414_223548
 #resume_from: ../outputs/yolo26_h23_20260414_223548/work/runs/yolo26_h23_train/weights/last.pt
