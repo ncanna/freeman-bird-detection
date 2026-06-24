@@ -13,6 +13,7 @@ PytorchWildlife
 scikit-learn
 seaborn
 speciesnet
+supervision
 timm
 torch
 torchvision
