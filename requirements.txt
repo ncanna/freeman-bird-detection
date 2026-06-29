@@ -6,6 +6,7 @@ nbformat
 numpy
 omegaconf
 opencv-python
+optuna
 pathlib
 pillow
 pycocotools

@@ -61,6 +61,7 @@ package "External Libraries" {
     [wandb] <<library>> $ext
     [opencv-python] <<library>> $ext
     [torch / torchvision] <<library>> $ext
+    [optuna] <<library>> $ext
 }
 
 '─────────────────────────────────────────────────────────

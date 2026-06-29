@@ -181,7 +181,12 @@ package "Orchestration" {
     + visualize_predictions() : None
     + run_pipeline() : None
   }
+
+  class HPOptimizer $orch {
+    
+  }
 }
+
 
 ' ─────────────────────────────────────────────
 ' VISUALIZATION
