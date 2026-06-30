@@ -20,6 +20,22 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
+# avc1 (H.264) plays in W&B but won't open headless on some nodes; mp4v is the
+# always-available fallback (check isOpened — a failed writer still constructs).
+_VIDEO_CODECS = ("avc1", "mp4v")
+
+
+def _open_video_writer(
+    out_path: "Path", fps: float, size: tuple[int, int]
+) -> cv2.VideoWriter:
+    """Open a VideoWriter, trying codecs until one works."""
+    for codec in _VIDEO_CODECS:
+        writer = cv2.VideoWriter(str(out_path), cv2.VideoWriter_fourcc(*codec), fps, size)
+        if writer.isOpened():
+            return writer
+        writer.release()
+    return writer
+
 
 def load_gt_detections(
     label_path: str,
@@ -213,9 +229,7 @@ class VideoAnnotator:
         out_path = Path(output_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-        fourcc = cv2.VideoWriter_fourcc(*"avc1") # changed so it will load on wandb
-        writer = cv2.VideoWriter(str(out_path), fourcc, fps, (w, h))
+        writer = _open_video_writer(out_path, fps, (w, h))
 
         for img_path in self._image_files:
             stem = img_path.stem
@@ -241,8 +255,6 @@ class VideoAnnotator:
         out_dir = Path(output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-
         for video_stem, frames in self._video_to_frames.items():
             first_frame = cv2.imread(str(frames[0]))
             if first_frame is None:
@@ -251,7 +263,7 @@ class VideoAnnotator:
             h, w = first_frame.shape[:2]
 
             out_path = out_dir / f"{video_stem}_annotated.mp4"
-            writer = cv2.VideoWriter(str(out_path), fourcc, fps, (w, h))
+            writer = _open_video_writer(out_path, fps, (w, h))
 
             for img_path in frames:
                 stem = img_path.stem

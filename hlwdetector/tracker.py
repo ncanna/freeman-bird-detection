@@ -50,8 +50,7 @@ class ExperimentTracker:
                 "dir": Path(artifact_manager.experiment_dir)
             }
 
-            # Pin the team/group entity so runs don't land in the personal
-            # workspace when the account default resolves elsewhere.
+            # Pin the team entity so runs don't fall back to the personal workspace.
             if config.wandb_entity is not None:
                 init_kwargs["entity"] = config.wandb_entity
 
@@ -100,10 +99,13 @@ class ExperimentTracker:
             logger.warning("W&B log failed: %s", exc)
 
     def log_video(self, path: str, key: str = "visualization") -> None:
-        """Upload a video file to W&B as a media object (no-op if W&B disabled)."""
+        """Upload a video to W&B (best-effort; never fatal)."""
         if not self._wandb_enabled or self._wandb_run is None:
             return
-        self._wandb_run.log({key: wandb.Video(path, format="mp4")})
+        try:
+            self._wandb_run.log({key: wandb.Video(path, format="mp4")})
+        except Exception as exc:
+            logger.warning("W&B video upload failed for %s: %s", path, exc)
 
     def log_artifact(self, path: str, name: str, artifact_type: str = "result") -> None:
         """Log a file/directory as a W&B artifact (no-op if W&B disabled)."""

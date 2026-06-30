@@ -5,7 +5,7 @@
 # torch here is a CUDA-13 build, so only schedule onto GPUs with a CUDA-13 driver
 # (e.g. A100 nodes). Without this, jobs landing on CUDA-12 V100 nodes crash with
 # torch.cuda.is_available()==False.
-#SBATCH --constraint=cuda13
+#SBATCH --constraint="cuda13&H200"
 #SBATCH --cpus-per-task=8
 # 32G OOM-killed during dataset scan of the 19k-image h23 set (MaxRSS ~32G).
 #SBATCH --mem=64G
