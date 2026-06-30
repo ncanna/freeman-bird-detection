@@ -10,11 +10,13 @@
 # ─────────────────────────────────────────
 
 main() {
-  local PACE_USER="rrivera73"
-  local LOCAL_USER="rebecca"
-  local PACE_HOST="login-ice.pace.gatech.edu"
-  local PACE_BASE="/home/hice1/${PACE_USER}/scratch"
-  local LOCAL_BASE="/home/${LOCAL_USER}"
+  # All values are overridable via environment variables so any user/host can use
+  # this script without editing it. Defaults match the original author's setup.
+  local PACE_USER="${PACE_USER:-rrivera73}"
+  local LOCAL_USER="${LOCAL_USER:-rebecca}"
+  local PACE_HOST="${PACE_HOST:-login-ice.pace.gatech.edu}"
+  local PACE_BASE="${PACE_BASE:-/home/hice1/${PACE_USER}/scratch}"
+  local LOCAL_BASE="${LOCAL_BASE:-/home/${LOCAL_USER}}"
 
   # ── Parse arguments ───────────────────────
   local TO=""
@@ -25,7 +27,8 @@ main() {
     case "$1" in
       -h|--help)
         echo "Usage: $0 --to [scratch|local] --scratchpath <path> --localpath <path>"
-        echo "Configure PACE_USER and LOCAL_USER at the top of this script before use"
+        echo "Override PACE_USER/LOCAL_USER/PACE_HOST/PACE_BASE/LOCAL_BASE via env vars, e.g.:"
+        echo "  PACE_USER=gburdell3 LOCAL_USER=alice $0 --to local --scratchpath run1 --localpath proj"
         echo ""
         echo "Options:"
         echo "  --to          Transfer direction: 'scratch' (local→remote) or 'local' (remote→local)"

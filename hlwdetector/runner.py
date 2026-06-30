@@ -6,6 +6,7 @@ Usage:
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 
@@ -87,9 +88,6 @@ class ExperimentRunner:
         Does not create a new output directory. All outputs land in the existing dir.
         Raises FileNotFoundError if config.json or model.json are missing.
         """
-        import dataclasses
-        import json as _json
-
         experiment_dir = Path(experiment_dir).resolve()
 
         config_json_path = experiment_dir / "config.json"
@@ -102,11 +100,11 @@ class ExperimentRunner:
                 "This experiment may not have completed training."
             )
 
-        # Load config, stripping extra keys (wandb_run_id, resumed_in, etc.)
-        raw = _json.loads(config_json_path.read_text())
+        # Load config, resolving repo-relative paths against this machine's repo root
+        # and stripping extra keys (wandb_run_id, resumed_in, etc.).
+        raw = json.loads(config_json_path.read_text())
         wandb_run_id = raw.get("wandb_run_id")
-        valid_fields = {f.name for f in dataclasses.fields(ExperimentConfig)}
-        config = ExperimentConfig(**{k: v for k, v in raw.items() if k in valid_fields})
+        config = ExperimentConfig.from_stored_dict(raw)
 
         artifact_manager = ArtifactManager.from_existing_dir(experiment_dir)
         artifact_manager.attach_log_file(mode="a")
@@ -114,6 +112,10 @@ class ExperimentRunner:
         AdapterClass     = get_adapter(config.model_name)
         adapter          = AdapterClass(artifact_manager, tracker)
         dataset_manager  = DatasetManager(config)
+
+        # Regenerate machine-specific data artifacts (yolo.yaml + train/val/test.txt)
+        # so eval/predict work after the experiment dir was produced on another machine.
+        adapter.prepare_data(dataset_manager, config)
 
         runner = cls.__new__(cls)
         runner.config           = config

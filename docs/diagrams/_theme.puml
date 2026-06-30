@@ -1,0 +1,99 @@
+' ============================================================
+'  Shared PlantUML theme — hlwdetector diagrams
+'  Soft-cool palette (blue / green / lavender), black text.
+'  Usage: place `!include _theme.puml` right after @startuml.
+'
+'  Apply a per-type FILL inline (borders are uniform, set below):
+'      class  DatasetManager $infra { ... }
+'      [YOLOAdapter] $adapter
+'      package "Data Objects" $pkg { ... }
+'      database "COCO JSON" as C $store
+' ============================================================
+
+' ---- Element-type fills (inline color tokens) --------------
+!$data    = "#D8C8EE"
+!$infra   = "#BFD6F0"
+!$adapter = "#BFE2C8"
+!$orch    = "#B2DDD5"
+!$viz     = "#C7CEEC"
+!$ext     = "#D2D9E0"
+!$store   = "#CCD5DE"
+!$iface   = "#B6E0EA"
+
+' ---- Structural containers ---------------------------------
+!$pkg     = "#F5F6F8"
+!$subpkg  = "#ECEEF2"
+
+' ---- Palette constants (skinparams / C4 macros) ------------
+!$ink        = "#1A1A1A"
+!$borderCol  = "#6B7785"
+!$arrowLine  = "#5A6470"
+!$arrowText  = "#44505C"
+!$noteFill   = "#FFF8E1"
+!$noteLine   = "#D6C36B"
+!$pkgFill    = "#F5F6F8"
+!$pkgLine    = "#AEB8C2"
+
+' C4 element fills (reuse the same palette)
+!$personFill = "#BFD6F0"
+!$personLine = "#4E7CB4"
+!$sysFill    = "#BFE2C8"
+!$sysLine    = "#509A60"
+!$extSysFill = "#D2D9E0"
+!$extSysLine = "#8492A2"
+
+' ---- Global appearance -------------------------------------
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam roundCorner 8
+skinparam defaultFontSize 12
+skinparam defaultFontColor $ink
+skinparam TitleFontColor $ink
+skinparam TitleFontSize 16
+
+skinparam ArrowColor $arrowLine
+skinparam ArrowFontColor $arrowText
+
+skinparam package {
+  BackgroundColor $pkgFill
+  BorderColor $pkgLine
+  FontColor $ink
+  FontStyle bold
+}
+
+skinparam note {
+  BackgroundColor $noteFill
+  BorderColor $noteLine
+  FontColor $ink
+}
+
+' Class — bodies tinted per element via inline fills; headers,
+' stereotypes and borders kept uniform and legible.
+skinparam classAttributeIconSize 0
+skinparam classFontSize 12
+skinparam class {
+  FontColor $ink
+  AttributeFontColor $ink
+  StereotypeFontColor $ink
+  HeaderBackgroundColor #EEF1F5
+  BackgroundColor #FFFFFF
+  BorderColor $borderCol
+}
+
+' Component / interface / database
+skinparam componentStyle rectangle
+skinparam component {
+  FontColor $ink
+  BackgroundColor #BFD6F0
+  BorderColor $borderCol
+}
+skinparam interface {
+  FontColor $ink
+  BackgroundColor #B6E0EA
+  BorderColor #2E93AC
+}
+skinparam database {
+  FontColor $ink
+  BackgroundColor #CCD5DE
+  BorderColor $borderCol
+}

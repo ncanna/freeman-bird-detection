@@ -82,8 +82,8 @@ class DatasetManager:
                 raise FileNotFoundError(f"split_json not found: {p}")
             return str(p)
 
-        # Auto-discover: look in same directory as coco_train
-        candidate = Path(self._config.coco_train).parent / "split.json"
+        # Auto-discover: look in same directory as coco_json
+        candidate = Path(self._config.coco_json).parent / "split.json"
         if candidate.exists():
             logger.debug("Auto-discovered split.json at %s", candidate)
             return str(candidate)

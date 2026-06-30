@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 import supervision as sv
 from ultralytics import RTDETR, settings
 
+from hlwdetector import paths
 from hlwdetector.adapters.base import (
     BaseModelAdapter,
     DetectionResult,
@@ -25,7 +26,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_PROJECT_ROOT = str(Path(__file__).resolve().parents[2])
+_PROJECT_ROOT = str(paths.REPO_ROOT)
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
@@ -299,7 +300,7 @@ class RTDeTRAdapter(BaseModelAdapter):
             raise RuntimeError(
                 f"model.json in {self.experiment_dir} has no best_weights_path"
             )
-        weights_path = Path(weights_path_str)
+        weights_path = paths.resolve(weights_path_str)
         if not weights_path.exists():
             raise FileNotFoundError(
                 f"best_weights_path from model.json does not exist: {weights_path}"

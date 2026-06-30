@@ -8,7 +8,7 @@ A framework for running and comparing bird detection experiments on camera trap 
 freeman-bird-detection/
 ├── hlwdetector/          # Core experiment framework
 ├── configs/              # YAML experiment configurations
-├── data/                 # Datasets (h03, h23, hlw)
+├── data/                 # Datasets (h03, h23)
 ├── outputs/              # Experiment artifacts and results
 ├── utilities/            # Data preparation and annotation conversion tools
 ├── notebooks/            # Dataset prep and tutorial notebooks
@@ -16,6 +16,22 @@ freeman-bird-detection/
 ├── run_experiments.py    # Example experiment runner script
 └── run_experiments.ipynb # Interactive experiment notebook
 ```
+
+## Architecture
+
+The diagrams below are rendered automatically from the PlantUML sources in `docs/diagrams/`. Edit the `.puml` files — a GitHub Action ([`render-puml.yml`](.github/workflows/render-puml.yml)) re-renders the SVGs on every push, so do not edit the `.svg` files by hand.
+
+### System Context
+
+![System context diagram](docs/diagrams/hlwdetector-c4-context.svg)
+
+### Components
+
+![Component diagram](docs/diagrams/hlwdetector-component.svg)
+
+### Class Diagram
+
+![Class diagram](docs/diagrams/hlwdetector-class-diagram.svg)
 
 ## Prerequisites
 
@@ -77,7 +93,7 @@ visualize_split: test
 
 **Key config fields:**
 - `config_name` — used for naming output directories
-- `model_name` — which adapter to use (`"yolo"`, `"rtdetr"`, or `"megadetector"`)
+- `model_name` — which adapter to use (`"yolo"` or `"rtdetr"`)
 - `hyperparameters` — model-specific training parameters passed through to the adapter (e.g. `model_weights`, `epochs`, `imgsz`, `batch`, `device`)
 - `coco_json` — COCO-format annotation JSON for all frames
 - `split_json` — JSON defining the train/val/test video stems
@@ -207,10 +223,6 @@ Wraps Ultralytics YOLO models (YOLO11, YOLO26, etc.). `prepare_data()` converts 
 **`rtdetr_adapter.py`** — `@register_adapter("rtdetr")`
 
 Wraps Ultralytics RT-DETR models. Same interface as the YOLO adapter.
-
-**`megadetector_adapter.py`** — `@register_adapter("megadetector")`
-
-Wraps MegaDetector V6 via the PytorchWildlife library. No fine-tuning is performed; `train()` simply loads the pretrained model, `predict()` runs inference on the test split, and `evaluate()` scores predictions against COCO ground truth with `pycocotools` COCOeval. Until a species-classifier step is added, all "animal" detections are treated as "bird" detections (a known approximation, flagged with a TODO in the adapter).
 
 ### `dataset_manager.py` — Dataset Loading
 
