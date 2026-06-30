@@ -128,8 +128,7 @@ class RTDeTRAdapter(BaseModelAdapter):
         device = hp.get("device")
         # AMP/fp16 crashes RT-DETR's decoder (CUBLAS) on the cu130/torch2.12 stack.
         amp = hp.get("amp", False)
-        # Match --cpus-per-task=8; ultralytics defaults to 16, oversubscribing the job.
-        workers = hp.get("workers", 8)
+        workers = 4  # < 8 allocated cores, else the GPU-feeding process starves
 
         runs_dir = str(Path(self.work_dir) / "runs")
         settings.update({
