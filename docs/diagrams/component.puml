@@ -10,6 +10,7 @@ title hlwdetector — Component Diagram
 package "Entry Points" {
     [ExperimentRunner] <<runner>> $orch
     [CLI\npython -m hlwdetector.runner] <<cli>> $orch
+    [HPOptimizer] <<optimizer>> $orch
 }
 
 [CLI\npython -m hlwdetector.runner] --> [ExperimentRunner]
@@ -84,6 +85,8 @@ package "File System" {
 [ExperimentRunner] --> [ArtifactManager]        : creates
 [ExperimentRunner] --> [ExperimentTracker]      : creates
 [ExperimentRunner] --> [VisualizationPipeline]  : calls visualize
+[HPOptimizer]      --> [ExperimentConfig]       : creates
+[HPOptimizer]      --> [ExperimentRunner]       : creates
 
 '─────────────────────────────────────────────────────────
 ' Adapter registry

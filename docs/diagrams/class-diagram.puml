@@ -183,7 +183,15 @@ package "Orchestration" {
   }
 
   class HPOptimizer $orch {
-    
+    - _model_name: str
+    - _hparam_ranges: dict
+    - _wandb_project: str
+    - _configs: list[ExperimentConfig]
+    --
+    + __init__(model_name, hparam_ranges, wandb_project)
+    - _generate_configs()
+    - _objective(): float
+    + run_study()
   }
 }
 
@@ -227,6 +235,10 @@ ExperimentRunner *-- ArtifactManager
 ExperimentRunner *-- ExperimentTracker
 ExperimentRunner *-- DatasetManager
 ExperimentRunner o-- BaseModelAdapter
+
+' Hyperparameter optimization
+HPOptimizer ..> ExperimentConfig : creates
+HPOptimizer ..> ExperimentRunner : creates
 
 ' Infrastructure dependencies
 DatasetManager --> ExperimentConfig : reads
