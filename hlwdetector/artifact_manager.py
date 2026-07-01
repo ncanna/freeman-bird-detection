@@ -16,7 +16,7 @@ from hlwdetector import paths
 
 if TYPE_CHECKING:
     from hlwdetector.adapters.base import MetricsDict, TrainingResult
-    from hlwdetector.config import ExperimentConfig
+    from hlwdetector.config.experiment_config import ExperimentConfig
 
 logger = logging.getLogger(__name__)
 

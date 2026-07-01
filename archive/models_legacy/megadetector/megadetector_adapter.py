@@ -18,7 +18,7 @@ from hlwdetector.adapters.base import (
 from hlwdetector.registry import register_adapter
 
 if TYPE_CHECKING:
-    from hlwdetector.config import ExperimentConfig
+    from hlwdetector.config.experiment_config import ExperimentConfig
     from hlwdetector.dataset_manager import DatasetManager, SplitView
 
 logger = logging.getLogger(__name__)

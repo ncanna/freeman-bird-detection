@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 import supervision as sv
 
 if TYPE_CHECKING:
-    from hlwdetector.config import ExperimentConfig
+    from hlwdetector.config.experiment_config import ExperimentConfig
     from hlwdetector.dataset_manager import DatasetManager
     from hlwdetector.artifact_manager import ArtifactManager
     from hlwdetector.tracker import ExperimentTracker

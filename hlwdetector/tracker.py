@@ -10,7 +10,7 @@ import wandb
 
 if TYPE_CHECKING:
     from hlwdetector.artifact_manager import ArtifactManager
-    from hlwdetector.config import ExperimentConfig
+    from hlwdetector.config.experiment_config import ExperimentConfig
 
 logger = logging.getLogger(__name__)
 
