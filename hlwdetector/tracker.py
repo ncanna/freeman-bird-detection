@@ -60,13 +60,24 @@ class ExperimentTracker:
                 init_kwargs["id"] = wandb_run_id
                 logger.info("Resuming W&B run ID run_id")
             elif config.resume_from is not None:
-                # Training resume: reuse W&B run id from config.json
-                saved = artifact_manager.load_config_json()
-                run_id = saved.get("wandb_run_id")
+                # Training resume: reuse the ORIGINAL run's W&B id so the continued
+                # training appends to the same W&B run/entry instead of opening a
+                # new one. The new experiment's own config.json has no id yet, so
+                # read it from the resume_experiment's config.json.
+                run_id = None
+                if config.resume_experiment is not None:
+                    orig_cfg = Path(config.output_dir) / config.resume_experiment / "config.json"
+                    if orig_cfg.exists():
+                        run_id = json.loads(orig_cfg.read_text()).get("wandb_run_id")
                 if run_id:
                     init_kwargs["resume"] = "must"
                     init_kwargs["id"] = run_id
-                    logger.info("Resuming W&B run ID run_id")
+                    logger.info("Resuming W&B run %s (from %s)", run_id, config.resume_experiment)
+                else:
+                    logger.warning(
+                        "resume_from set but no W&B run_id found for %s; starting a new W&B run",
+                        config.resume_experiment,
+                    )
             self._wandb_run = wandb.init(**init_kwargs)
             self._wandb_enabled = True
 

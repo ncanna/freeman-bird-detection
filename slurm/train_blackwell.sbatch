@@ -9,6 +9,7 @@
 # Kept identical to the H200 sbatch (8 cpus / 64G / workers=4 in the adapter) so
 # the only variable in the comparison is the GPU. Node has 96 cores, 16 GPUs.
 #SBATCH --cpus-per-task=8
+# 64G is enough without RAM caching (32G OOM'd on the dataset scan).
 #SBATCH --mem=64G
 #SBATCH --time=16:00:00
 #SBATCH --output=slurm/logs/train_%x_%j.out

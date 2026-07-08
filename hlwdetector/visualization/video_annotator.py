@@ -11,6 +11,8 @@ Moved from utilities/visualization.py. Minimal modifications:
 
 import csv
 import logging
+import shutil
+import subprocess
 from pathlib import Path
 
 import cv2
@@ -23,6 +25,64 @@ logger = logging.getLogger(__name__)
 # avc1 (H.264) plays in W&B but won't open headless on some nodes; mp4v is the
 # always-available fallback (check isOpened — a failed writer still constructs).
 _VIDEO_CODECS = ("avc1", "mp4v")
+
+
+def _resolve_ffmpeg() -> str | None:
+    """Locate an ffmpeg that can actually encode H.264.
+
+    Prefer the static build bundled with imageio-ffmpeg — it ships libx264,
+    whereas the PACE `ffmpeg` module does not (its only H.264 encoders are the
+    hardware v4l2m2m/vulkan wrappers, unusable in a batch job). Fall back to an
+    ffmpeg on PATH only if imageio-ffmpeg is absent.
+    """
+    try:
+        import imageio_ffmpeg
+
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return shutil.which("ffmpeg")
+
+
+def transcode_to_h264(src_path: "str | Path") -> Path:
+    """Re-encode a video to H.264/yuv420p so it plays in browsers and W&B.
+
+    OpenCV on the compute nodes lacks an H.264 encoder, so annotated videos are
+    written with the mp4v (MPEG-4 Part 2) fallback codec, which the W&B/HTML5
+    player cannot decode — the media panel stays blank. This produces a faststart
+    H.264 file alongside the original using the imageio-ffmpeg bundled encoder.
+
+    Returns the path to the H.264 file on success, or the original path if no
+    H.264-capable ffmpeg is found or the transcode fails (upload still happens,
+    just may not play inline).
+    """
+    src = Path(src_path)
+    dst = src.with_name(f"{src.stem}_h264.mp4")
+
+    ffmpeg = _resolve_ffmpeg()
+    if ffmpeg is None:
+        logger.warning(
+            "No ffmpeg found (imageio-ffmpeg missing and none on PATH); "
+            "W&B video may not play (mp4v codec).",
+        )
+        return src
+
+    cmd = [
+        ffmpeg, "-y", "-i", str(src),
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
+        str(dst),
+    ]
+    try:
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    except (subprocess.CalledProcessError, OSError) as exc:
+        stderr = getattr(exc, "stderr", b"") or b""
+        logger.warning(
+            "H.264 transcode failed for %s (%s); uploading original. %s",
+            src, exc, stderr[-500:].decode("utf-8", "replace"),
+        )
+        return src
+
+    logger.info("Transcoded to H.264 for W&B playback: %s", dst)
+    return dst
 
 
 def _open_video_writer(

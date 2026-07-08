@@ -16,6 +16,7 @@ from hlwdetector.dataset_manager import DatasetManager
 from hlwdetector.registry import get_adapter
 from hlwdetector.tracker import ExperimentTracker
 from hlwdetector.visualization.pipeline import VisualizationPipeline
+from hlwdetector.visualization.video_annotator import transcode_to_h264
 
 # Import adapters to trigger @register_adapter decorators
 import hlwdetector.adapters  # noqa: F401
@@ -41,8 +42,11 @@ class ExperimentRunner:
         logger.info("Initializing ExperimentRunner with adapter %s", self.AdapterClass)
 
     def train(self):
-        if self.config.resume_from is None:
-            self.adapter.prepare_data(self.dataset_manager, self.config)
+        # Always (re)generate the data artifacts — train/val/test.txt + data yaml —
+        # into this run's work dir. On resume they'd otherwise be missing (the old
+        # guard skipped this), which let train/eval fall back to the resumed run's
+        # yaml but left predict() with no test.txt, crashing the pipeline.
+        self.adapter.prepare_data(self.dataset_manager, self.config)
 
         training_result = self.adapter.train(self.config)
         self.artifact_manager.save_model_info(training_result)
@@ -67,10 +71,12 @@ class ExperimentRunner:
             self.detections = self.artifact_manager.load_detections()
         viz = VisualizationPipeline(self.config, self.artifact_manager, self.dataset_manager)
         viz.run(self.detections)
-        video_path = str(
+        video_path = (
             self.artifact_manager.visualizations_dir / f"{self.config.config_name}_annotated.mp4"
         )
-        self.tracker.log_video(video_path)
+        # W&B's player can't decode the mp4v fallback codec; upload an H.264 copy.
+        playable_path = transcode_to_h264(video_path)
+        self.tracker.log_video(str(playable_path))
 
     def run_pipeline(self) -> None:
         self.train()

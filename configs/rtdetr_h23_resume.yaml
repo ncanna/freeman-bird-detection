@@ -1,0 +1,18 @@
+config_name: rtdetr_h23
+model_name: rtdetr
+hyperparameters:
+  model_weights: rtdetr-l.pt
+  epochs: 100  # ignored on true resume: Ultralytics reloads epochs/amp/LR from
+               # the checkpoint and continues 59 -> 100 (orig run stopped at 58)
+  imgsz: 640
+  batch: 32
+  device: "0"
+  amp: false   # ignored on resume (reloaded from checkpoint); orig run was amp off
+coco_json: ../data/h23/instances_merged.json
+split_json: ../data/h23/split.json
+images_dir: ../data/h23/images
+output_dir: ../outputs
+wandb_project: bird-detection
+wandb_entity: gatech-birdlab
+resume_experiment: rtdetr_h23_20260630_065539
+resume_from: ../outputs/rtdetr_h23_20260630_065539/work/runs/train/weights/last.pt

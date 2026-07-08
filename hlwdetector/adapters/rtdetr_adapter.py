@@ -152,20 +152,15 @@ class RTDeTRAdapter(BaseModelAdapter):
                 name="train",
             )
         else:
-            self._discover_data_yaml(config)
+            # True resume: Ultralytics reloads optimizer/EMA/LR-schedule/epoch and
+            # the original train args (data, epochs, save_dir) from the checkpoint
+            # and continues in the checkpoint's own run dir until its original
+            # epoch target. Passing resume=True with no other args is what makes
+            # this *continue* training rather than restart a fresh loop with a
+            # reset LR schedule (which is why the old resume "started from scratch").
             self._model = RTDETR(config.resume_from)
             self._register_epoch_callback()
-            self._model.train(
-                data=self._data_yaml_path,
-                epochs=epochs,
-                imgsz=imgsz,
-                batch=batch,
-                device=device,
-                amp=amp,
-                workers=workers,
-                project=runs_dir,
-                name="train",
-            )
+            self._model.train(resume=True)
 
         run_dir = Path(self._model.trainer.save_dir)
         best_pt = run_dir / "weights" / "best.pt"

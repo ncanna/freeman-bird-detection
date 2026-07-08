@@ -7,7 +7,7 @@
 # torch.cuda.is_available()==False.
 #SBATCH --constraint="cuda13&H200"
 #SBATCH --cpus-per-task=8
-# 32G OOM-killed during dataset scan of the 19k-image h23 set (MaxRSS ~32G).
+# 64G is enough without RAM caching (32G OOM'd on the dataset scan).
 #SBATCH --mem=64G
 #SBATCH --time=16:00:00
 #SBATCH --output=slurm/logs/train_%x_%j.out
