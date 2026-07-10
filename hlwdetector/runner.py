@@ -60,6 +60,8 @@ class ExperimentRunner:
             "val/mAP50": metrics.map50,
             "val/mAP50_95": metrics.map50_95,
         })
+    
+        return metrics  # Added return statement for HPO
 
     def predict(self):
         self.detections = self.adapter.predict(self.config)

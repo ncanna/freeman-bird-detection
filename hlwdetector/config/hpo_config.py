@@ -17,8 +17,19 @@ logger = logging.getLogger(__name__)
 # Evaluation metrics that may be optimized (keys of adapters.base.MetricsDict).
 VALID_METRICS = ("precision", "recall", "f1", "map50", "map50_95")
 
-# Recognized tiers within the hyperparameter search space.
-SEARCH_SPACE_TIERS = ("static", "categorical", "int", "float")
+# Optuna hyperparameter search space categories.
+SEARCH_SPACE_TIERS = ("categorical", "int", "float")
+
+
+@dataclass
+class OptunaArgs:
+    direction: str = "maximize"      # "maximize" | "minimize"
+    metric: str = "map50_95"         # key from MetricsDict to optimize
+    n_trials: int = 20
+    timeout: int | None = None       # seconds; None = no wall-clock limit
+    sampler: str = "TPE"             # "TPE" | "Random" | "Grid" | "CmaEs"
+    pruner: str = "Hyperband"           # "Median" | "None" | "Hyperband" | ...
+    storage: str | None = None       # Optuna storage URL (e.g. sqlite:///hpo.db); NOT a filesystem path
 
 
 @dataclass
@@ -27,14 +38,14 @@ class HPOConfig:
 
     Holds the base experiment inputs shared by every trial, the Optuna study
     parameters, and the model-specific hyperparameter search space. The search
-    space is stored opaquely as ``hyperparameters`` (a dict with static/
-    categorical/int/float tiers); ``HPOptimizer`` interprets those tiers into
-    ``trial.suggest_*`` calls.
+    space is stored opaquely as ``hyperparameters`` (a dict with keys that align
+    with Optuna's search space features categorical/int/float); ``HPOptimizer`` 
+    interprets those keys into ``trial.suggest_*`` calls.
     """
 
     model_name: str                  # registered adapter: "yolo" | "rtdetr"
-    config_name: str                 # identifier used in output dir / study naming
-    hyperparameters: dict[str, Any]  # opaque search space: static/categorical/int/float tiers
+    study_name: str                  # Optuna study name, used to name generated experiment configs
+    hyperparameters: dict[str, Any]  # opaque search space: static/categorical/int/float keys
 
     # Canonical data inputs (COCO JSON + image paths), shared by every trial
     coco_json: str   # coco annotations for all frames
@@ -46,22 +57,11 @@ class HPOConfig:
     random_seed: int = 42
 
     # Optuna study parameters
-    direction: str = "maximize"      # "maximize" | "minimize"
-    metric: str = "map50_95"         # key from MetricsDict to optimize
-    n_trials: int = 20
-    timeout: int | None = None       # seconds; None = no wall-clock limit
-    sampler: str = "TPE"             # "TPE" | "Random" | "Grid" | "CmaEs"
-    pruner: str = "Median"           # "Median" | "None" | "Hyperband" | ...
-    storage: str | None = None       # Optuna storage URL (e.g. sqlite:///hpo.db); NOT a filesystem path
-    study_name: str | None = None    # defaults to config_name if unset
-
+    optuna: OptunaArgs
+    
     # Fields holding filesystem paths — serialized repo-relative, resolved on load.
     # NOTE: `storage` is intentionally excluded (it is a DB URL, not a path).
     PATH_FIELDS = ("coco_json", "images_dir", "split_json", "output_dir")
-
-    def __post_init__(self) -> None:
-        if self.study_name is None:
-            self.study_name = self.config_name
 
     @classmethod
     def from_yaml(cls, path: str) -> "HPOConfig":

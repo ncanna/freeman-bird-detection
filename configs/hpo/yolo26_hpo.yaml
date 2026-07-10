@@ -1,0 +1,37 @@
+# YOLO26 Optuna study configuration
+model_name: yolo
+
+# Canonical data inputs (COCO JSON + image paths), shared by every trial
+coco_json: ../../data/h23/instances_merged.json
+images_dir: ../../data/h23/images
+split_json: ../../data/h23/split.json
+output_dir: ../../outputs
+wandb_project: bird-detection
+random_seed: 42
+
+# Optuna study specification
+optuna_args:
+  study_name: yolo26_hpo
+  direction: maximize
+  metric: map50_95
+  n_trials: 2
+  timeout: ~
+  sampler: TPE
+  pruner: hyperband
+  storage: ~
+hyperparameters:
+  static:
+    model_weights: yolo26n.pt
+    epochs: 3
+    imgsz: 640
+  categorical:
+  int:
+    batch:
+      - 32
+      - 128
+      - log: True
+  float:
+    lr:
+      - 0.0001
+      - 0.01
+      - log: True

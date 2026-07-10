@@ -183,13 +183,10 @@ package "Orchestration" {
   }
 
   class HPOptimizer $orch {
-    - _model_name: str
-    - _search_space: dict
-    - _wandb_project: str
-    - _configs: list[ExperimentConfig]
+    - config: HPOConfig
     --
-    + __init__(model_name, search_space_config, wandb_project)
-    - _generate_configs()
+    + __init__(hpo_config: str | Path)
+    - _generate_experiment_config()
     - _objective(): float
     + run_study()
   }

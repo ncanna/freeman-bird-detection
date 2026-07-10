@@ -96,7 +96,7 @@ visualize_split: test
 - `model_name` — which adapter to use (`"yolo"` or `"rtdetr"`)
 - `hyperparameters` — model-specific training parameters passed through to the adapter (e.g. `model_weights`, `epochs`, `imgsz`, `batch`, `device`)
 - `coco_json` — COCO-format annotation JSON for all frames
-- `split_json` — JSON defining the train/val/test video stems
+- `split_json` — JSON defining the train/val/te`1st video stems
 - `images_dir` — flat directory containing the extracted video frames
 - `output_dir` — base directory for experiment output (default `outputs`)
 - `random_seed` — random seed (default `42`)
