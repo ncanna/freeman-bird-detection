@@ -6,7 +6,4 @@ optimizer = HPOptimizer(hpo_config_path)
 optimizer.run_study()
 
 #TODO
-# Address study storage -- currently stored in memory with no name
-# Implement pruning
-# Visualize with Optuna dashboard
-# Pass Optuna params as kwargs
+# Test run

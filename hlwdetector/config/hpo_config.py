@@ -4,32 +4,38 @@ from __future__ import annotations
 
 import dataclasses
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-from hlwdetector import paths
+from hlwdetector.paths import REPO_ROOT, to_repo_rel, resolve
 
 logger = logging.getLogger(__name__)
 
 # Evaluation metrics that may be optimized (keys of adapters.base.MetricsDict).
 VALID_METRICS = ("precision", "recall", "f1", "map50", "map50_95")
 
-# Optuna hyperparameter search space categories.
-SEARCH_SPACE_TIERS = ("categorical", "int", "float")
+# All categories except "static" make up the Optuna study search space
+HPARAM_CATEGORIES = ("static", "categorical", "int", "float")
 
 
 @dataclass
-class OptunaArgs:
+class StudyArgs:
+    """kwargs passed into ``optuna.create_study``."""
+    study_name: str                  # used to name generated experiment configs
     direction: str = "maximize"      # "maximize" | "minimize"
-    metric: str = "map50_95"         # key from MetricsDict to optimize
+    sampler: str = "TPE"             # "TPE" | "Random" | "Grid" | "CmaEs"
+    pruner: str = "Hyperband"        # "Median" | "None" | "Hyperband" | ...
+    storage: str | None = None       # Optuna storage URL (e.g. sqlite:///hpo.db); NOT a filesystem path
+
+
+@dataclass
+class OptimizeArgs:
+    """kwargs passed into ``optuna.study.optimize``."""
     n_trials: int = 20
     timeout: int | None = None       # seconds; None = no wall-clock limit
-    sampler: str = "TPE"             # "TPE" | "Random" | "Grid" | "CmaEs"
-    pruner: str = "Hyperband"           # "Median" | "None" | "Hyperband" | ...
-    storage: str | None = None       # Optuna storage URL (e.g. sqlite:///hpo.db); NOT a filesystem path
 
 
 @dataclass
@@ -44,7 +50,6 @@ class HPOConfig:
     """
 
     model_name: str                  # registered adapter: "yolo" | "rtdetr"
-    study_name: str                  # Optuna study name, used to name generated experiment configs
     hyperparameters: dict[str, Any]  # opaque search space: static/categorical/int/float keys
 
     # Canonical data inputs (COCO JSON + image paths), shared by every trial
@@ -52,13 +57,15 @@ class HPOConfig:
     images_dir: str  # base dir containing extracted video frames
     split_json: str  # json defining train/val/test splits
 
+    # Optuna study parameters
+    study_args: StudyArgs                 # optuna.create_study kwargs
+    optimize_args: OptimizeArgs = field(default_factory=OptimizeArgs)  # optuna.study.optimize kwargs
+
+    metric: str = "map50_95"         # key from MetricsDict to optimize
     output_dir: str = "outputs"
     wandb_project: str | None = None
     random_seed: int = 42
 
-    # Optuna study parameters
-    optuna: OptunaArgs
-    
     # Fields holding filesystem paths — serialized repo-relative, resolved on load.
     # NOTE: `storage` is intentionally excluded (it is a DB URL, not a path).
     PATH_FIELDS = ("coco_json", "images_dir", "split_json", "output_dir")
@@ -67,7 +74,7 @@ class HPOConfig:
     def from_yaml(cls, path: str) -> "HPOConfig":
         """Load config from YAML, resolving all relative paths against the YAML's parent dir."""
         yaml_path = Path(path).resolve()
-        base_dir = yaml_path.parent
+        #base_dir = yaml_path.parent
 
         with open(yaml_path, "r") as f:
             raw = yaml.safe_load(f)
@@ -77,7 +84,7 @@ class HPOConfig:
                 return None
             p = Path(val)
             if not p.is_absolute():
-                p = (base_dir / p).resolve()
+                p = (REPO_ROOT / p).resolve()
             return str(p)
 
         # Resolve all path fields
@@ -85,14 +92,17 @@ class HPOConfig:
             if key in raw and raw[key] is not None:
                 raw[key] = resolve(raw[key])
 
+        raw["study_args"] = StudyArgs(**(raw.get("study_args") or {}))
+        raw["optimize_args"] = OptimizeArgs(**(raw.get("optimize_args") or {}))
+
         return cls(**raw)
 
     def to_serializable_dict(self) -> dict[str, Any]:
         """Dict for study config with path fields stored relative to the repo root."""
-        data = dataclasses.asdict(self)
+        data = asdict(self)
         for key in self.PATH_FIELDS:
             if data.get(key) is not None:
-                data[key] = paths.to_repo_rel(data[key])
+                data[key] = to_repo_rel(data[key])
         return data
 
     @classmethod
@@ -105,7 +115,12 @@ class HPOConfig:
         kwargs = {k: v for k, v in raw.items() if k in valid_fields}
         for key in cls.PATH_FIELDS:
             if kwargs.get(key) is not None:
-                kwargs[key] = str(paths.resolve(kwargs[key]))
+                kwargs[key] = str(resolve(kwargs[key]))
+        # asdict() serializes study_args/optimize_args as nested dicts; rebuild the instances.
+        if isinstance(kwargs.get("study_args"), dict):
+            kwargs["study_args"] = StudyArgs(**kwargs["study_args"])
+        if isinstance(kwargs.get("optimize_args"), dict):
+            kwargs["optimize_args"] = OptimizeArgs(**kwargs["optimize_args"])
         return cls(**kwargs)
 
     def validate(self) -> None:
@@ -136,14 +151,14 @@ class HPOConfig:
             )
 
         # Check the study direction is valid
-        if self.direction not in ("maximize", "minimize"):
+        if self.study.direction not in ("maximize", "minimize"):
             raise ValueError(
-                f"direction must be 'maximize' or 'minimize', got: {self.direction!r}"
+                f"direction must be 'maximize' or 'minimize', got: {self.study.direction!r}"
             )
 
         # Check trial count is positive
-        if self.n_trials <= 0:
-            raise ValueError(f"n_trials must be positive, got: {self.n_trials}")
+        if self.optimize_args.n_trials <= 0:
+            raise ValueError(f"n_trials must be positive, got: {self.optimize_args.n_trials}")
 
         # Light structural check of the search space; HPOptimizer validates range specs.
         if not isinstance(self.hyperparameters, dict):
@@ -151,9 +166,9 @@ class HPOConfig:
                 f"hyperparameters must be a dict of search-space tiers, got: "
                 f"{type(self.hyperparameters).__name__}"
             )
-        unknown_tiers = set(self.hyperparameters) - set(SEARCH_SPACE_TIERS)
+        unknown_tiers = set(self.hyperparameters) - set(HPARAM_CATEGORIES)
         if unknown_tiers:
             raise ValueError(
                 f"hyperparameters has unknown tier(s) {sorted(unknown_tiers)}; "
-                f"expected a subset of {SEARCH_SPACE_TIERS}"
+                f"expected a subset of {HPARAM_CATEGORIES}"
             )

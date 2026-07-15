@@ -50,6 +50,9 @@ class ExperimentTracker:
                 "dir": Path(artifact_manager.experiment_dir)
             }
 
+            if config.wandb_group is not None:
+                init_kwargs["group"] = config.wandb_group
+
             if wandb_run_id is not None:
                 # Attaching to an existing experiment (e.g. eval after training)
                 init_kwargs["resume"] = "must"

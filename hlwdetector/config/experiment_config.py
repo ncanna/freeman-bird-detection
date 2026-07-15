@@ -10,7 +10,7 @@ from typing import Any
 
 import yaml
 
-from hlwdetector import paths
+from hlwdetector.paths import REPO_ROOT, to_repo_rel, resolve
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +31,7 @@ class ExperimentConfig:
     random_seed: int = 42
 
     wandb_project: str | None = None
+    wandb_group: str | None = None  # groups related runs in W&B (e.g. all trials of an HPO study)
     resume_experiment: str | None = None
     resume_from: str | None = None  # speficies model weights to load and resume training from
 
@@ -44,7 +45,7 @@ class ExperimentConfig:
     def from_yaml(cls, path: str) -> "ExperimentConfig":
         """Load config from YAML, resolving all relative paths against the YAML's parent dir."""
         yaml_path = Path(path).resolve()
-        base_dir = yaml_path.parent
+        #base_dir = yaml_path.parent
 
         with open(yaml_path, "r") as f:
             raw = yaml.safe_load(f)
@@ -54,7 +55,7 @@ class ExperimentConfig:
                 return None
             p = Path(val)
             if not p.is_absolute():
-                p = (base_dir / p).resolve()
+                p = (REPO_ROOT / p).resolve()
             return str(p)
 
         # Resolve all path fields
@@ -69,7 +70,7 @@ class ExperimentConfig:
         data = dataclasses.asdict(self)
         for key in self.PATH_FIELDS:
             if data.get(key) is not None:
-                data[key] = paths.to_repo_rel(data[key])
+                data[key] = to_repo_rel(data[key])
         return data
 
     @classmethod
@@ -82,7 +83,7 @@ class ExperimentConfig:
         kwargs = {k: v for k, v in raw.items() if k in valid_fields}
         for key in cls.PATH_FIELDS:
             if kwargs.get(key) is not None:
-                kwargs[key] = str(paths.resolve(kwargs[key]))
+                kwargs[key] = str(resolve(kwargs[key]))
         return cls(**kwargs)
 
     def validate(self) -> None:

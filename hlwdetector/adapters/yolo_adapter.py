@@ -6,7 +6,7 @@ import json
 import logging
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Dict
 
 import supervision as sv
 from ultralytics import YOLO, settings
@@ -45,6 +45,8 @@ class YOLOAdapter(BaseModelAdapter):
         self._model = None
         self._data_yaml_path: str | None = None
         self._training_result: TrainingResult | None = None
+        # Optional (epoch, metrics) -> None hook, set by HPO; may raise optuna.TrialPruned.
+        self._hpo_pruning_callback = None
 
     # ------------------------------------------------------------------ #
     # prepare_data
@@ -256,7 +258,7 @@ class YOLOAdapter(BaseModelAdapter):
         """
         adapter = self
 
-        def on_fit_epoch_end(trainer) -> None:
+        def on_fit_epoch_end(trainer) -> Dict:
             epoch = trainer.epoch + 1  # Ultralytics epochs are 0-indexed
             metrics: dict = {}
             if trainer.metrics:
@@ -269,6 +271,10 @@ class YOLOAdapter(BaseModelAdapter):
                 metrics.update({k: float(v) for k, v in trainer.lr.items()})
             if metrics:
                 adapter._tracker.log_wandb_step(metrics, step=epoch)
+            if adapter._hpo_pruning_callback is not None:
+                adapter._hpo_pruning_callback(epoch, metrics)  # may raise optuna.TrialPruned
+
+            return metrics
 
         self._model.add_callback("on_fit_epoch_end", on_fit_epoch_end)
 
