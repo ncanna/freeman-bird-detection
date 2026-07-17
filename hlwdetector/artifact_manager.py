@@ -25,24 +25,31 @@ class ArtifactManager:
     """Manages all output paths for an experiment run."""
 
     def __init__(self, config: "ExperimentConfig") -> None:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.experiment_name = f"{config.config_name}_{timestamp}"
+        if config.run_name is not None:
+            self.experiment_name = config.run_name
+        else:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            self.experiment_name = f"{config.config_name}_{timestamp}"
+
+        experiment_dir = (Path(config.output_dir) / self.experiment_name).resolve()
+        if config.run_name is not None and experiment_dir.exists():
+            raise FileExistsError(
+                f"Explicit run_name already exists: {experiment_dir}. "
+                "Choose a new run number to avoid mixing experiment artifacts."
+            )
+
         if config.resume_from is not None:
             original_dir = (Path(config.output_dir) / config.resume_experiment).resolve()
             if not original_dir.exists():
                 raise FileNotFoundError(
                     f"Original experiment dir not found: {original_dir}"
                 )
-            self.experiment_dir = (
-                Path(config.output_dir) / self.experiment_name
-            ).resolve()
+            self.experiment_dir = experiment_dir
             self.experiment_dir.mkdir(parents=True, exist_ok=True)
             logger.info("Resuming %s -> new dir: %s", original_dir.name, self.experiment_dir)
             self._stamp_resumed_in(original_dir, self.experiment_dir)
         else:
-            self.experiment_dir = (
-                Path(config.output_dir) / self.experiment_name
-            ).resolve()
+            self.experiment_dir = experiment_dir
             self.experiment_dir.mkdir(parents=True, exist_ok=True)
             logger.info("Experiment directory: %s", self.experiment_dir)
 

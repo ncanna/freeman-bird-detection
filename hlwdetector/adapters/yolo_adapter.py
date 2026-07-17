@@ -60,11 +60,10 @@ class YOLOAdapter(BaseModelAdapter):
         from utilities.annotation_converter import AnnotationConverter
 
         work_path = Path(self.work_dir)
-        images_dir = Path(config.images_dir)
-
-        # All labels go into a single flat directory alongside images
-        labels_dir = images_dir.parent / "labels"
-        labels_dir.mkdir(parents=True, exist_ok=True)
+        source_images_dir = Path(config.images_dir).resolve()
+        dataset_root, images_dir, labels_dir = self._prepare_ultralytics_dataset_root(
+            source_images_dir
+        )
 
         converter = AnnotationConverter(class_mapping={"bird": 0})
 
@@ -80,14 +79,20 @@ class YOLOAdapter(BaseModelAdapter):
             )
 
             # Write a text file listing absolute image paths for this split
-            image_paths = split_view.image_paths
-            missing = [p for p in image_paths if not p.exists()]
+            source_image_paths = split_view.image_paths
+            missing = [p for p in source_image_paths if not p.exists()]
             if missing:
                 raise FileNotFoundError(
-                    f"Split '{split_name}': {len(missing)}/{len(image_paths)} image files are missing from "
-                    f"{images_dir}. Extract frames first using extract_frames_from_dir(). "
+                    f"Split '{split_name}': {len(missing)}/{len(source_image_paths)} image files are missing from "
+                    f"{source_images_dir}. Extract frames first using extract_frames_from_dir(). "
                     f"First missing: {missing[0]}"
                 )
+            # Resolve only to calculate a source-relative filename, then rebuild
+            # the run-local symlink path that Ultralytics uses to find labels.
+            image_paths = [
+                images_dir / path.resolve().relative_to(source_images_dir)
+                for path in source_image_paths
+            ]
             txt_path = work_path / f"{split_name}.txt"
             txt_path.write_text(
                 "\n".join(str(p) for p in image_paths) + "\n"
@@ -97,7 +102,7 @@ class YOLOAdapter(BaseModelAdapter):
         # YOLO label auto-discovery: replaces /images/ → /labels/ in each image path,
         # so labels land at {images_dir.parent}/labels/{filename}.txt ✓
         yaml_data = {
-            "path": str(images_dir.parent),
+            "path": str(dataset_root),
             "train": str(work_path / "train.txt"),
             "val": str(work_path / "val.txt"),
             "test": str(work_path / "test.txt"),
@@ -122,10 +127,10 @@ class YOLOAdapter(BaseModelAdapter):
 
         hp = config.hyperparameters
         model_weights = hp.get("model_weights")
-        epochs = hp.get("epochs")
-        imgsz = hp.get("imgsz")
-        batch = hp.get("batch")
-        device = hp.get("device")
+        # Every remaining key is an Ultralytics train override. Keeping this
+        # pass-through in one place makes generated OFAT configs effective while
+        # preserving the existing project/name/data paths managed by the adapter.
+        train_kwargs = {key: value for key, value in hp.items() if key != "model_weights"}
 
         # Point Ultralytics runs to outputs directory
         runs_dir = str(Path(self.work_dir) / "runs")
@@ -141,12 +146,9 @@ class YOLOAdapter(BaseModelAdapter):
             self._register_epoch_callback()
             self._model.train(
                 data=self._data_yaml_path,
-                epochs=epochs,
-                imgsz=imgsz,
-                batch=batch,
-                device=device,
                 project=runs_dir,
                 name="train",
+                **train_kwargs,
             )
         else:  # resume: load pretrained weights, train fresh with full hparam control
             self._discover_data_yaml(config)
@@ -154,12 +156,9 @@ class YOLOAdapter(BaseModelAdapter):
             self._register_epoch_callback()
             self._model.train(
                 data=self._data_yaml_path,
-                epochs=epochs,
-                imgsz=imgsz,
-                batch=batch,
-                device=device,
                 project=runs_dir,
                 name="train",
+                **train_kwargs,
             )
 
         run_dir = Path(self._model.trainer.save_dir)

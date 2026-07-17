@@ -26,6 +26,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_OPTIMIZER = "AdamW"
+DEFAULT_LR0 = 1e-4
+DEFAULT_MOMENTUM = 0.9
+DEFAULT_WARMUP_BIAS_LR = 0.0
+
 _PROJECT_ROOT = str(paths.REPO_ROOT)
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
@@ -41,6 +46,8 @@ class RTDeTRAdapter(BaseModelAdapter):
         imgsz:         input image size (square, default 640)
         batch:         batch size
         device:        device string passed to Ultralytics (e.g. "0", "cpu")
+        optimizer:     optimizer name (default AdamW for RT-DETR)
+        lr0:           initial learning rate (default 1e-4 for RT-DETR)
 
     Internal state is preserved across sequential calls:
         prepare_data → train → evaluate → predict
@@ -66,10 +73,10 @@ class RTDeTRAdapter(BaseModelAdapter):
         from utilities.annotation_converter import AnnotationConverter
 
         work_path = Path(self.work_dir)
-        images_dir = Path(config.images_dir)
-
-        labels_dir = images_dir.parent / "labels"
-        labels_dir.mkdir(parents=True, exist_ok=True)
+        source_images_dir = Path(config.images_dir).resolve()
+        dataset_root, images_dir, labels_dir = self._prepare_ultralytics_dataset_root(
+            source_images_dir
+        )
 
         converter = AnnotationConverter(class_mapping={"bird": 0})
 
@@ -83,21 +90,26 @@ class RTDeTRAdapter(BaseModelAdapter):
                 video_filter=split_view.video_stems,
             )
 
-            image_paths = split_view.image_paths
-            missing = [p for p in image_paths if not p.exists()]
+            source_image_paths = split_view.image_paths
+            missing = [p for p in source_image_paths if not p.exists()]
             if missing:
                 raise FileNotFoundError(
-                    f"Split '{split_name}': {len(missing)}/{len(image_paths)} image files are missing from "
-                    f"{images_dir}. Extract frames first using extract_frames_from_dir(). "
+                    f"Split '{split_name}': {len(missing)}/{len(source_image_paths)} image files are missing from "
+                    f"{source_images_dir}. Extract frames first using extract_frames_from_dir(). "
                     f"First missing: {missing[0]}"
                 )
+            # Keep the final text-file paths under run-local ``dataset/images``.
+            image_paths = [
+                images_dir / path.resolve().relative_to(source_images_dir)
+                for path in source_image_paths
+            ]
             txt_path = work_path / f"{split_name}.txt"
             txt_path.write_text(
                 "\n".join(str(p) for p in image_paths) + "\n"
             )
 
         yaml_data = {
-            "path": str(images_dir.parent),
+            "path": str(dataset_root),
             "train": str(work_path / "train.txt"),
             "val": str(work_path / "val.txt"),
             "test": str(work_path / "test.txt"),
@@ -122,13 +134,15 @@ class RTDeTRAdapter(BaseModelAdapter):
 
         hp = config.hyperparameters
         model_weights = hp.get("model_weights")
-        epochs = hp.get("epochs")
-        imgsz = hp.get("imgsz")
-        batch = hp.get("batch")
-        device = hp.get("device")
-        # AMP/fp16 crashes RT-DETR's decoder (CUBLAS) on the cu130/torch2.12 stack.
-        amp = hp.get("amp", False)
-        workers = 4  # < 8 allocated cores, else the GPU-feeding process starves
+        train_kwargs = {key: value for key, value in hp.items() if key != "model_weights"}
+        # Ultralytics' auto mode ignores lr0 and selects an SGD-family optimizer
+        # for this study's iteration count. Pin transformer-appropriate defaults.
+        train_kwargs.setdefault("optimizer", DEFAULT_OPTIMIZER)
+        train_kwargs.setdefault("lr0", DEFAULT_LR0)
+        train_kwargs.setdefault("momentum", DEFAULT_MOMENTUM)
+        train_kwargs.setdefault("warmup_bias_lr", DEFAULT_WARMUP_BIAS_LR)
+        # Keep below the 8 allocated cores or the GPU-feeding process starves.
+        train_kwargs["workers"] = 4
 
         runs_dir = str(Path(self.work_dir) / "runs")
         settings.update({
@@ -142,14 +156,9 @@ class RTDeTRAdapter(BaseModelAdapter):
             self._register_epoch_callback()
             self._model.train(
                 data=self._data_yaml_path,
-                epochs=epochs,
-                imgsz=imgsz,
-                batch=batch,
-                device=device,
-                amp=amp,
-                workers=workers,
                 project=runs_dir,
                 name="train",
+                **train_kwargs,
             )
         else:
             # True resume: Ultralytics reloads optimizer/EMA/LR-schedule/epoch and

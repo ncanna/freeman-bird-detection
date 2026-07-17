@@ -32,6 +32,10 @@ class ExperimentConfig:
 
     wandb_project: str | None = None
     wandb_entity: str | None = None  # W&B team/group entity; None -> account default
+    wandb_group: str | None = None
+    wandb_tags: list[str] = field(default_factory=list)
+    run_name: str | None = None  # exact output/W&B name; None keeps timestamp naming
+    experiment_metadata: dict[str, Any] = field(default_factory=dict)
     resume_experiment: str | None = None
     resume_from: str | None = None  # speficies model weights to load and resume training from
 

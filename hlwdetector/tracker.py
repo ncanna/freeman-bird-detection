@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 import wandb
@@ -47,12 +48,26 @@ class ExperimentTracker:
             init_kwargs: dict = {
                 "project": config.wandb_project,
                 "name": artifact_manager.experiment_name,
-                "dir": Path(artifact_manager.experiment_dir)
+                "dir": Path(artifact_manager.experiment_dir),
             }
+
+            # Keep the complete resolved experiment configuration in W&B and
+            # promote study metadata to top-level keys for convenient filtering.
+            wandb_config = config.to_serializable_dict()
+            wandb_config.update(config.experiment_metadata)
+            if os.environ.get("SLURM_JOB_ID"):
+                wandb_config["slurm_job_id"] = os.environ["SLURM_JOB_ID"]
+            if os.environ.get("SLURM_JOB_NAME"):
+                wandb_config["slurm_job_name"] = os.environ["SLURM_JOB_NAME"]
+            init_kwargs["config"] = wandb_config
 
             # Pin the team entity so runs don't fall back to the personal workspace.
             if config.wandb_entity is not None:
                 init_kwargs["entity"] = config.wandb_entity
+            if config.wandb_group is not None:
+                init_kwargs["group"] = config.wandb_group
+            if config.wandb_tags:
+                init_kwargs["tags"] = config.wandb_tags
 
             if wandb_run_id is not None:
                 # Attaching to an existing experiment (e.g. eval after training)

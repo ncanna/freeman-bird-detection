@@ -1,6 +1,7 @@
 # RT-DETR & YOLO Training Settings — h23 "default" runs
 
-All settings below are taken from each run's Ultralytics `work/runs/train/args.yaml`:
+The detailed settings below are a **historical reference** taken from each run's
+Ultralytics `work/runs/train/args.yaml`:
 
 - **RT-DETR**: `outputs/rtdetr_h23_20260707_072734` (amp-on, 100 epochs, H200)
 - **YOLO11**: `outputs/yolo11_h23_20260609_160816`
@@ -9,11 +10,13 @@ All settings below are taken from each run's Ultralytics `work/runs/train/args.y
 project YAML configs only set `model_weights`, `epochs`, `imgsz`, `batch`, `device`,
 and `amp` — so RT-DETR and YOLO share **identical** settings. The only real differences
 are the model weights and the dataloader `workers` (4 vs 8). Nothing in the augmentation
-or optimizer space was actually tuned.
+or optimizer space was actually tuned. The current full H23 configs now make the
+study-critical defaults explicit and use 50 epochs: YOLO11/YOLO26 pin the current
+effective `MuSGD`/`lr0=0.01` behavior, while RT-DETR uses `AdamW`/`lr0=0.0001`.
 
 ---
 
-## 1. Core hyperparameters
+## 1. Historical core hyperparameters
 
 | Parameter | RT-DETR | YOLO11 | Meaning |
 |---|---|---|---|
@@ -37,29 +40,24 @@ or optimizer space was actually tuned.
 
 ## 2. Optimizer & LR schedule — likely the RT-DETR problem
 
-| Parameter | Value (both) | Notes |
-|---|---|---|
-| `optimizer` | `auto` -> **SGD** | `auto` ignores the requested `lr0`/`momentum` and resolved to `SGD(lr=0.01, momentum=0.9)` for **both** models |
-| `lr0` | 0.01 (effective) | initial learning rate |
-| `lrf` | 0.01 | final LR = `lr0 * lrf` = 1e-4 |
-| `cos_lr` | False | linear decay (not cosine) |
-| `momentum` | 0.9 | |
-| `weight_decay` | 0.0005 | |
-| `warmup_epochs` | 3.0 | |
-| `warmup_momentum` | 0.8 | |
-| `warmup_bias_lr` | 0.1 | |
-| `nbs` | 64 | nominal batch size for LR scaling |
+| Parameter | Historical runs | Current 50-epoch study | Notes |
+|---|---|---|---|
+| `optimizer` | `auto` (SGD-family) | YOLO: `MuSGD`; RT-DETR: `AdamW` | Current Ultralytics `auto` ignores requested `lr0` and selects `MuSGD` for this study's iteration count, so the study pins optimizers explicitly |
+| `lr0` | 0.01 effective | YOLO: 0.01; RT-DETR: 0.0001 | initial learning rate |
+| `lrf` | 0.01 | 0.01 | final LR = `lr0 * lrf` |
+| `cos_lr` | False | False | linear decay (not cosine) |
+| `momentum` | 0.937 stored; 0.9 effective under `auto` | 0.9 | SGD momentum or AdamW beta1 |
+| `weight_decay` | 0.0005 | 0.0005 | retained as the Ultralytics default and tested separately |
+| `warmup_epochs` | 3.0 | 3.0 | |
+| `warmup_momentum` | 0.8 | 0.8 | |
+| `warmup_bias_lr` | 0.1 stored; 0.0 effective under `auto` | 0.0 | |
+| `nbs` | 64 | 64 | nominal batch size for LR scaling |
 
-**Comment (ties to the degradation + duplicate-box findings):** `optimizer=auto`
-selected **SGD @ lr0=0.01** for both models (confirmed in the training logs). That is
-the *intended* recipe for YOLO (a CNN), and YOLO trains fine. But **RT-DETR is a
-DETR/transformer model**, and the official RT-DETR recipe uses **AdamW at ~1e-4**
-(with an even lower backbone LR) and `weight_decay ~1e-4`. Training a transformer with
-**SGD at 0.01 (~100x higher LR, wrong optimizer family)** is very consistent with the
-observed behavior: per-epoch val mAP peaks at epoch 1 and then declines, `best.pt` ends
-up being an early/near-pretrained checkpoint, and the object queries never sharpen to
-one-per-bird (which is why the video shows many duplicate boxes). This is the most
-likely single lever to change.
+**Why RT-DETR changed:** its prior SGD-family optimization at `lr0=0.01` is a poor
+fit for a DETR/transformer model. The official RT-DETR recipe uses **AdamW at 1e-4**
+(and a lower backbone LR that the simple Ultralytics argument surface cannot express).
+The project therefore uses explicit `AdamW`/`lr0=0.0001` for fresh RT-DETR runs. This
+also ensures `lr0` is honored instead of silently replaced by `optimizer=auto`.
 
 ---
 
@@ -116,32 +114,19 @@ behavior — the optimizer/LR mismatch in Section 2 is the far more likely culpr
 
 ---
 
-## 5. Where data augmentation lives in the project
+## 5. Where tunable values enter the project
 
-**Short answer: nowhere yet.** A grep for augmentation keys (`mosaic`, `hsv`, `mixup`,
-`fliplr`, `translate`, `degrees`, `copy_paste`, `erasing`, ...) across `hlwdetector/`
-and `configs/` returns **no matches**. Every value in Section 4 comes straight from the
-Ultralytics defaults because nothing in this project sets them.
+The YAML `hyperparameters:` mapping is now passed through by both Ultralytics-backed
+adapters (except `model_weights`, which initializes the model). This means settings such
+as `optimizer`, `lr0`, `weight_decay`, and `mosaic` reach `model.train(...)` directly.
+The adapters continue to own the generated data path and Ultralytics output path, and
+RT-DETR continues to cap `workers` at 4 for the 8-CPU SLURM allocation.
 
-The single control point is each adapter's `train()` method, where `model.train(...)` is
-called with only a fixed set of arguments (data, epochs, imgsz, batch, device, amp,
-workers, project, name) — no augmentation args:
+Each run creates `work/dataset/images` as a symlink to the source images and writes its
+own `work/dataset/labels` directory. Ultralytics therefore creates a run-local label
+cache, avoiding races when many SLURM jobs prepare the same H23 split concurrently.
 
-- `hlwdetector/adapters/yolo_adapter.py` — `train()`; the `self._model.train(...)` calls
-  (around lines 142 and 155).
-- `hlwdetector/adapters/rtdetr_adapter.py` — `train()`; the `self._model.train(...)` call
-  (around line 143). Note the **resume path** (line 163) uses `self._model.train(resume=True)`,
-  which reloads all args from the checkpoint — so any augmentation kwargs would be ignored
-  on a resumed run.
-
-The config surface those methods read from:
-
-- YAML `hyperparameters:` block (e.g. `configs/rtdetr_h23_full.yaml`,
-  `configs/yolo11_h23_full.yaml`) -> `config.hyperparameters` -> read via `hp.get(...)`
-  at the top of each `train()` (lines ~124-130).
-
-So to actually tune augmentation you would (1) add keys such as `mosaic:`, `hsv_h:`,
-`scale:` under `hyperparameters:` in the config, and (2) forward them from the adapter's
-`train()` into the `model.train(...)` call. **Neither exists today**, which is why adding
-augmentation keys to a config currently has no effect — the adapter never reads or passes
-them.
+The sensitivity submission script writes persistent, generated YAML files with one
+non-default value per run. RT-DETR's true-resume path remains intentionally different:
+`resume=True` reloads optimizer, learning rate, and other training arguments from the
+checkpoint, so new tuning values apply only to fresh runs.

@@ -2,11 +2,17 @@ config_name: rtdetr_h23
 model_name: rtdetr
 hyperparameters:
   model_weights: rtdetr-l.pt
-  epochs: 100
+  epochs: 50
   imgsz: 640
   batch: 32
   device: "0"
   amp: true    # fp16 ~2x faster (compute-bound); crashed only on A100, safe on H200/Blackwell
+  optimizer: AdamW
+  lr0: 0.0001  # RT-DETR transformer recipe; optimizer=auto ignores this value
+  momentum: 0.9
+  warmup_bias_lr: 0.0
+  weight_decay: 0.0005
+  mosaic: 1.0
 coco_json: ../data/h23/instances_merged.json
 split_json: ../data/h23/split.json
 images_dir: ../data/h23/images

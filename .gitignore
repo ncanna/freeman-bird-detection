@@ -11,3 +11,4 @@ outputs
 wandb/
 runs/
 slurm/logs/
+slurm/generated/

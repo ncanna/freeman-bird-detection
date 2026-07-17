@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import supervision as sv
@@ -47,6 +49,40 @@ class BaseModelAdapter(ABC):
         self.experiment_dir = artifact_manager.experiment_dir
         self.work_dir = artifact_manager.work_dir
         self._tracker = tracker
+
+    def _prepare_ultralytics_dataset_root(
+        self,
+        source_images_dir: str | Path,
+    ) -> tuple[Path, Path, Path]:
+        """Create run-local image/label paths without copying source images.
+
+        Ultralytics discovers labels by replacing the final ``/images/`` path
+        component with ``/labels/``. A per-run image-directory symlink keeps
+        that convention while isolating generated labels and ``labels.cache``
+        from other SLURM jobs that may start concurrently.
+        """
+        source_images_dir = Path(source_images_dir).resolve()
+        if not source_images_dir.is_dir():
+            raise FileNotFoundError(f"images_dir not found: {source_images_dir}")
+
+        dataset_root = Path(self.work_dir) / "dataset"
+        linked_images_dir = dataset_root / "images"
+        labels_dir = dataset_root / "labels"
+        dataset_root.mkdir(parents=True, exist_ok=True)
+
+        if linked_images_dir.is_symlink():
+            if linked_images_dir.resolve() != source_images_dir:
+                linked_images_dir.unlink()
+        elif linked_images_dir.exists():
+            raise FileExistsError(
+                f"Expected a dataset image symlink, found a real path: {linked_images_dir}"
+            )
+
+        if not linked_images_dir.is_symlink():
+            relative_target = os.path.relpath(source_images_dir, start=dataset_root)
+            linked_images_dir.symlink_to(relative_target, target_is_directory=True)
+        labels_dir.mkdir(parents=True, exist_ok=True)
+        return dataset_root, linked_images_dir, labels_dir
 
     def log_epoch(self, epoch: int, metrics: dict) -> None:
         """Log per-epoch metrics. Call from framework-specific callbacks in subclasses."""
