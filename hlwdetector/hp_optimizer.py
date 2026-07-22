@@ -218,7 +218,9 @@ class HPOptimizer:
         study_kwargs["pruner"] = self._build_pruner(study_kwargs.get("pruner"))
         study_kwargs["storage"] = self._build_storage(study_kwargs.get("storage"))
         study = optuna.create_study(**study_kwargs)
+        study_start = time.perf_counter()
         study.optimize(self._objective, **optimize_kwargs)
+        total_time = time.perf_counter() - study_start
 
         best = study.best_trial
         best_config_name = f"{self.config.study_args.study_name}_trial_{best.number}"
@@ -233,5 +235,6 @@ class HPOptimizer:
             best.params,
             len(study.trials),
             self.config.study_args.direction,
+            total_time,
         )
         return study

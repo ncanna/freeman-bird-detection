@@ -85,8 +85,10 @@ package "File System" {
 [ExperimentRunner] --> [ArtifactManager]        : creates
 [ExperimentRunner] --> [ExperimentTracker]      : creates
 [ExperimentRunner] --> [VisualizationPipeline]  : calls visualize
-[HPOptimizer]      --> [ExperimentConfig]       : creates
-[HPOptimizer]      --> [ExperimentRunner]       : creates
+[HPOptimizer]      --> [ExperimentConfig]       : creates per trial
+[HPOptimizer]      --> [ExperimentRunner]       : creates per trial
+[HPOptimizer]      --> [optuna]                 : create_study / optimize
+[HPOptimizer]      --> [ArtifactManager]        : creates (study dir)
 
 '─────────────────────────────────────────────────────────
 ' Adapter registry
@@ -106,6 +108,8 @@ BMA <|.. [RTDETRAdapter]
 ' Data flow
 '─────────────────────────────────────────────────────────
 [ExperimentConfig]  <.. ConfigYAML       : parsed from
+[HPOptimizer]       <.. ConfigYAML       : HPO study config
+[HPOptimizer]       --> OutputsDir       : writes hpo/ study dir
 [DatasetManager]    <.. CocoJSON         : loads
 [DatasetManager]    <.. SplitJSON        : partitions by
 [DatasetManager]    <.. ImagesDir        : resolves frames from

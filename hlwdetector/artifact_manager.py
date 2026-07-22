@@ -189,8 +189,12 @@ class ArtifactManager:
         best_params: dict,
         n_trials: int,
         direction: str,
+        total_time_s: float,
     ) -> None:
         """Write study_summary.json describing the best trial and study size."""
+        total_time = int(total_time_s)
+        hours, remainder = divmod(total_time, 3600)
+        minutes, seconds = divmod(remainder, 60)
         self._write_json(
             "study_summary.json",
             {
@@ -201,6 +205,7 @@ class ArtifactManager:
                 "best_params": best_params,
                 "n_trials": n_trials,
                 "direction": direction,
+                "total_time": f"{hours:02d}:{minutes:02d}:{seconds:02d}",
             },
         )
 

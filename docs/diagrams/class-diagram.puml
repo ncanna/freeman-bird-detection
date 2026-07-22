@@ -60,6 +60,40 @@ package "Data Objects" {
     + accuracy : float | None
     + raw : dict
   }
+
+  class HPOConfig <<dataclass>> $data {
+    + model_name : str
+    + hyperparameters : dict[str, Any]
+    + coco_json : str
+    + images_dir : str
+    + split_json : str
+    + study_args : StudyArgs
+    + optimize_args : OptimizeArgs
+    + model_weights : str | None
+    + metric : str
+    + output_dir : str
+    + wandb_project : str | None
+    + random_seed : int
+    + {static} PATH_FIELDS : tuple[str, ...]
+    --
+    + {static} from_yaml(path: str) : HPOConfig
+    + to_serializable_dict() : dict[str, Any]
+    + {static} from_stored_dict(raw: dict) : HPOConfig
+    + validate() : None
+  }
+
+  class StudyArgs <<dataclass>> $data {
+    + study_name : str
+    + direction : str
+    + sampler : str
+    + pruner : str
+    + storage : str | None
+  }
+
+  class OptimizeArgs <<dataclass>> $data {
+    + n_trials : int
+    + timeout : int | None
+  }
 }
 
 ' ─────────────────────────────────────────────
@@ -144,7 +178,7 @@ package "Model Adapters" {
     + predict(config: ExperimentConfig) : DetectionResult
   }
 
-  class RTDeTRAdapter <<@register_adapter("rtdetr")>> $adapter {
+  class RTDETRAdapter <<@register_adapter("rtdetr")>> $adapter {
     - _model : RTDETR | None
     - _data_yaml_path : str | None
     - _training_result : TrainingResult | None
@@ -156,7 +190,7 @@ package "Model Adapters" {
   }
 
   BaseModelAdapter <|-- YOLOAdapter
-  BaseModelAdapter <|-- RTDeTRAdapter
+  BaseModelAdapter <|-- RTDETRAdapter
 }
 
 ' ─────────────────────────────────────────────
@@ -234,8 +268,12 @@ ExperimentRunner *-- DatasetManager
 ExperimentRunner o-- BaseModelAdapter
 
 ' Hyperparameter optimization
-HPOptimizer ..> ExperimentConfig : creates
-HPOptimizer ..> ExperimentRunner : creates
+HPOptimizer *-- HPOConfig : loads
+HPOptimizer ..> ExperimentConfig : creates per trial
+HPOptimizer ..> ExperimentRunner : creates per trial
+HPOConfig *-- StudyArgs
+HPOConfig *-- OptimizeArgs
+HPOConfig ..> paths : serialize / resolve\npath fields
 
 ' Infrastructure dependencies
 DatasetManager --> ExperimentConfig : reads
@@ -248,7 +286,7 @@ ExperimentTracker --> ArtifactManager : uses
 ExperimentConfig ..> paths : serialize / resolve\npath fields
 ArtifactManager ..> paths : repo-rel weights\n& resume paths
 YOLOAdapter ..> paths : resolve best.pt
-RTDeTRAdapter ..> paths : resolve best.pt
+RTDETRAdapter ..> paths : resolve best.pt
 
 ' Adapter dependencies
 BaseModelAdapter --> ExperimentTracker : logs via

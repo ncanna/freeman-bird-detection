@@ -25,7 +25,7 @@ optimize_args:  # kwargs that will be passed into optuna.study.optimize
 # Hyperparameter search space
 hyperparameters:
   static:
-    epochs: 3
+    epochs: 50
     imgsz: 640
   categorical:
      batch: [8, 16, 32]

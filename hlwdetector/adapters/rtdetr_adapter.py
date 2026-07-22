@@ -1,4 +1,4 @@
-"""RTDeTRAdapter — Ultralytics RT-DETR, mirrors YOLOAdapter exactly."""
+"""RTDETRAdapter — Ultralytics RT-DETR, mirrors YOLOAdapter exactly."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ if _PROJECT_ROOT not in sys.path:
 
 
 @register_adapter("rtdetr")
-class RTDeTRAdapter(BaseModelAdapter):
+class RTDETRAdapter(BaseModelAdapter):
     """RT-DETR adapter backed by Ultralytics.
 
     Hyperparameters (config.hyperparameters):

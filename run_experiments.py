@@ -9,8 +9,8 @@ start_total = time.time()
 for config in ["configs/experiment/yolo26_h23_subset.yaml"]:
     start = time.time()
     runner = ExperimentRunner(config)
-    #runner.run_pipeline()
-    runner.train()
+    runner.run_pipeline()
+    #runner.train()
     elapsed = (time.time() - start) / 60
     print(f"[{config}] finished in {elapsed:.2f} min")
 

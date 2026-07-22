@@ -1,20 +1,21 @@
 # Freeman Bird Detection: HLW Detector
 
-A framework for running and comparing bird detection experiments on camera trap footage. Supports multiple detection models through a unified adapter interface, with experiment tracking, artifact management, and visualization.
+A framework for running and comparing bird detection experiments on camera trap footage. Supports multiple detection models through a unified adapter interface, with experiment tracking, artifact management, hyperparameter optimization (Optuna), and visualization.
 
 ## Repository Structure
 
 ```
 freeman-bird-detection/
 ├── hlwdetector/          # Core experiment framework
-├── configs/              # YAML experiment configurations
+├── configs/              # YAML configs — experiment/ (single runs) and hpo/ (Optuna studies)
 ├── data/                 # Datasets (h03, h23)
 ├── outputs/              # Experiment artifacts and results
 ├── utilities/            # Data preparation and annotation conversion tools
 ├── notebooks/            # Dataset prep and tutorial notebooks
 ├── docs/                 # Architecture diagrams (PlantUML)
+├── run_experiments.ipynb # Interactive experiment notebook
 ├── run_experiments.py    # Example experiment runner script
-└── run_experiments.ipynb # Interactive experiment notebook
+└── run_hpo.py            # Example HPO runner script
 ```
 
 ## Architecture
@@ -67,25 +68,25 @@ The `split.json` file maps split names to lists of video stems. The framework fi
 
 ---
 
-## Defining a Config
+## Defining an Experiment Config
 
-Create a YAML file in `configs/`. All paths are resolved relative to the YAML file's location:
+Create a YAML file in `configs/experiment/`. Relative path fields are resolved relative to the repository root:
 
 ```yaml
 config_name: yolo11_h23
 model_name: yolo
+model_weights: yolo11n.pt
 
 hyperparameters:
-  model_weights: yolo11n.pt
   epochs: 100
   imgsz: 640
   batch: 32
   device: "0"
 
-coco_json: ../data/h23/instances_merged.json
-split_json: ../data/h23/split.json
-images_dir: ../data/h23/images
-output_dir: ../outputs
+coco_json: data/h23/instances_merged.json
+split_json: data/h23/split.json
+images_dir: data/h23/images
+output_dir: outputs
 
 wandb_project: freeman-bird-detection
 visualize_split: test
@@ -94,18 +95,20 @@ visualize_split: test
 **Key config fields:**
 - `config_name` — used for naming output directories
 - `model_name` — which adapter to use (`"yolo"` or `"rtdetr"`)
-- `hyperparameters` — model-specific training parameters passed through to the adapter (e.g. `model_weights`, `epochs`, `imgsz`, `batch`, `device`)
+- `model_weights` — weights filename or path (the adapter loads it unless resuming)
+- `hyperparameters` — model-specific training parameters passed through to the adapter (e.g. `epochs`, `imgsz`, `batch`, `device`)
 - `coco_json` — COCO-format annotation JSON for all frames
-- `split_json` — JSON defining the train/val/te`1st video stems
+- `split_json` — JSON defining the train/val/test video stems
 - `images_dir` — flat directory containing the extracted video frames
 - `output_dir` — base directory for experiment output (default `outputs`)
 - `random_seed` — random seed (default `42`)
 - `wandb_project` — optional Weights & Biases project name for logging
+- `wandb_group` — optional W&B run group (set automatically for HPO trials)
 - `visualize_split` — which split to visualize after prediction (`"train"`, `"val"`, or `"test"`; default `"test"`)
 - `visualization_fps` — frame rate of the annotated output video (default `29.0`)
 - `resume_from` / `resume_experiment` — see [Resuming Training](#resuming-training) below
 
-All path fields (`coco_json`, `split_json`, `images_dir`, `output_dir`, `resume_from`) are resolved relative to the YAML file's location.
+All path fields (`coco_json`, `split_json`, `images_dir`, `output_dir`, `resume_from`) are resolved relative to the repository root.
 
 ---
 
@@ -126,7 +129,7 @@ Run all stages (train → evaluate → predict → visualize) in sequence using 
 ```python
 from hlwdetector.runner import ExperimentRunner
 
-runner = ExperimentRunner("configs/yolo11_h23_full.yaml")
+runner = ExperimentRunner("configs/experiment/yolo11_h23_full.yaml")
 runner.run_pipeline()
 ```
 
@@ -137,7 +140,7 @@ Each stage can also be called separately. This is useful for re-running evaluati
 ```python
 from hlwdetector.runner import ExperimentRunner
 
-runner = ExperimentRunner("configs/yolo11_h23_full.yaml")
+runner = ExperimentRunner("configs/experiment/yolo11_h23_full.yaml")
 runner.train()
 runner.evaluate()
 runner.predict()
@@ -165,7 +168,7 @@ To continue training from a prior checkpoint, set both `resume_from` and `resume
 
 ```yaml
 resume_experiment: yolo11_h23_20260402_004059
-resume_from: ../outputs/yolo11_h23_20260402_004059/work/runs/yolo11_h23_train/weights/last.pt
+resume_from: outputs/yolo11_h23_20260402_004059/work/runs/yolo11_h23_train/weights/last.pt
 ```
 
 Both fields must be set together or left unset.
@@ -177,7 +180,7 @@ To run several configs in sequence:
 ```python
 from hlwdetector.runner import ExperimentRunner
 
-for config in ["configs/yolo11_h23_full.yaml", "configs/yolo26_h23_full.yaml", "configs/rtdetr_h23_full.yaml"]:
+for config in ["configs/experiment/yolo11_h23_full.yaml", "configs/experiment/yolo26_h23_full.yaml", "configs/experiment/rtdetr_h23_full.yaml"]:
     ExperimentRunner(config).run_pipeline()
 ```
 
@@ -185,11 +188,88 @@ See `run_experiments.py` for a runnable version of this with per-config timing.
 
 ---
 
+## Hyperparameter Optimization
+
+`HPOptimizer` runs an [Optuna](https://optuna.org/) study over a search space, spawning one full `ExperimentRunner` per trial. Every trial trains, evaluates, and records its result; the metric returned to Optuna is the config field you choose via `metric`. Poorly performing trials can be stopped early through Optuna pruners, which read the per-epoch metrics reported by the model adapter (pruning is currently wired for the YOLO adapter).
+
+Define a study config in `configs/hpo/` (all paths resolve relative to the repo root):
+
+```yaml
+model_name: yolo
+model_weights: yolo26n.pt
+metric: map50_95                 # one of: precision, recall, f1, map50, map50_95
+
+coco_json: data/h23/instances_subset.json
+images_dir: data/h23/images
+split_json: data/h23/split_h23_subset.json
+output_dir: outputs
+wandb_project: freeman-bird-detection
+random_seed: 42
+
+study_args:                      # passed to optuna.create_study
+  study_name: yolo26_hpo
+  direction: maximize            # maximize | minimize
+  sampler: TPE                   # TPE | Random | Grid | CmaEs
+  pruner: Hyperband              # Median | Hyperband | SuccessiveHalving | None
+  storage: ~                     # optional Optuna DB URL (e.g. sqlite:///hpo.db); default: journal file in the study dir
+
+optimize_args:                   # passed to study.optimize
+  n_trials: 20
+  timeout: ~                     # optional wall-clock limit in seconds
+
+hyperparameters:                 # search space, split into tiers
+  static:                        # fixed for every trial
+    epochs: 3
+    imgsz: 640
+  categorical:                   # trial.suggest_categorical — spec is the list of choices
+    batch: [8, 16, 32]
+    optimizer: [SGD, Adam, AdamW]
+  int:                           # trial.suggest_int — [low, high, {**kwargs}]
+  float:                         # trial.suggest_float — [low, high, {**kwargs}]
+    lr0:
+      - 0.0001
+      - 0.01
+      - log: True
+```
+
+**Key HPO config fields:**
+- `model_name` / `model_weights` — adapter and pretrained weights shared by every trial
+- `metric` — which `MetricsDict` field to optimize (`precision`, `recall`, `f1`, `map50`, `map50_95`)
+- `coco_json` / `images_dir` / `split_json` / `output_dir` — data inputs shared by every trial
+- `study_args` — keyword args forwarded to `optuna.create_study` (`study_name`, `direction`, `sampler`, `pruner`, `storage`)
+- `optimize_args` — keyword args forwarded to `study.optimize` (`n_trials`, `timeout`)
+- `hyperparameters` — the search space, partitioned into `static` (fixed), `categorical` (list of choices), `int`, and `float` (each range spec is `[low, high, {**kwargs}]`, where kwargs such as `log: True` pass through to `trial.suggest_*`)
+
+Run the study:
+
+```python
+from hlwdetector.hp_optimizer import HPOptimizer
+
+optimizer = HPOptimizer("configs/hpo/yolo26_hpo.yaml")
+study = optimizer.run_study()
+print(study.best_trial.params)
+```
+
+Each trial's `wandb_group` is set to the study id so all its runs are grouped together in Weights & Biases. A study writes its own directory under `outputs/hpo/<study_name>_<timestamp>/`:
+- `trials.csv` — per-trial sampled hyperparameters, metric value, state, and duration
+- `study_summary.json` — best trial number, config name, value, and params
+- `optuna_journal.log` — Optuna journal storage (when no external `storage` URL is set)
+- `hpo.log` — study-level log
+
+In addition, every trial produces a full standalone experiment directory (under `output_dir`) named `<study_name>_trial_<n>_<timestamp>/`, with the same artifacts as any single experiment.
+
+---
+
 ## hlwdetector Package
 
-### `config.py` — Experiment Configuration
+### `config/` — Configuration
 
-`ExperimentConfig` is a dataclass that defines all parameters for an experiment. Configs are loaded from YAML files with all paths resolved relative to the YAML's location.
+- **`config/experiment_config.py`** — `ExperimentConfig`, a dataclass defining all parameters for a single experiment. Loaded from YAML with path fields resolved relative to the repo root. Includes `wandb_group`, which the HPO optimizer uses to group all trials of a study in W&B.
+- **`config/hpo_config.py`** — `HPOConfig` (plus the `StudyArgs` and `OptimizeArgs` dataclasses) defining an Optuna study: shared data inputs, `study_args`/`optimize_args`, the `metric` to optimize, and the `hyperparameters` search space. `validate()` checks the adapter, data paths, metric, direction, trial count, and search-space tiers.
+
+### `hp_optimizer.py` — Hyperparameter Optimization
+
+`HPOptimizer` drives an Optuna study, translating the config's sampler/pruner/storage names into Optuna objects and running one `ExperimentRunner` per trial. `run_study()` is the entry point; it returns the completed `optuna.Study` and writes a study summary. See [Hyperparameter Optimization](#hyperparameter-optimization) above for usage.
 
 ### `runner.py` — Experiment Runner
 
