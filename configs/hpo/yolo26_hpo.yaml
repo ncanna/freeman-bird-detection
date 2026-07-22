@@ -1,5 +1,6 @@
 # YOLO26 Optuna study configuration
 model_name: yolo
+model_weights: yolo26n.pt
 metric: map50_95
 
 # Canonical data inputs shared by every trial to generate ExperimentConfi
@@ -14,26 +15,28 @@ random_seed: 42
 study_args:  # kwargs that will be passed into optuna.create_study
   study_name: yolo26_hpo
   direction: maximize
-  sampler: TPE
+  sampler: TPE  # Note: default n_startup_trials=10
   pruner: hyperband
   storage: ~
 optimize_args:  # kwargs that will be passed into optuna.study.optimize
   n_trials: 2
   timeout: ~
 
+# Hyperparameter search space
 hyperparameters:
   static:
-    model_weights: yolo26n.pt
     epochs: 3
     imgsz: 640
   categorical:
+     batch: [8, 16, 32]
+     optimizer: [SGD, MuSGD, Adam, AdamW]
   int:
-    batch:
-      - 32
-      - 128
-      - step: 32
   float:
-    lr:
+    lr0:
       - 0.0001
-      - 0.001
+      - 0.01
+      - log: True
+    lrf:  # defined as a fraction of lr0
+      - 0.01
+      - 1.0
       - log: True

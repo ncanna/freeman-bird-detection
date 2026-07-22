@@ -27,6 +27,7 @@ class ExperimentConfig:
 
     split_json: str  # json defining train/val/text splits
 
+    model_weights: str | None = None  # weights filename/path; adapter loads unless resuming
     output_dir: str = "outputs"
     random_seed: int = 42
 

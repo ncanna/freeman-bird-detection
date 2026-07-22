@@ -123,11 +123,8 @@ class YOLOAdapter(BaseModelAdapter):
             raise RuntimeError("Call prepare_data() before train().")
 
         hp = config.hyperparameters
-        model_weights = hp.get("model_weights")
-        epochs = hp.get("epochs")
-        imgsz = hp.get("imgsz")
-        batch = hp.get("batch")
-        device = hp.get("device")
+        model_weights = config.model_weights
+        train_kwargs = {k: v for k, v in hp.items()}
 
         # Point Ultralytics runs to outputs directory
         runs_dir = str(Path(self.work_dir) / "runs")
@@ -143,12 +140,9 @@ class YOLOAdapter(BaseModelAdapter):
             self._register_epoch_callback()
             self._model.train(
                 data=self._data_yaml_path,
-                epochs=epochs,
-                imgsz=imgsz,
-                batch=batch,
-                device=device,
                 project=runs_dir,
                 name="train",
+                **train_kwargs,
             )
         else:  # resume: load pretrained weights, train fresh with full hparam control
             self._discover_data_yaml(config)
@@ -156,12 +150,9 @@ class YOLOAdapter(BaseModelAdapter):
             self._register_epoch_callback()
             self._model.train(
                 data=self._data_yaml_path,
-                epochs=epochs,
-                imgsz=imgsz,
-                batch=batch,
-                device=device,
                 project=runs_dir,
                 name="train",
+                **train_kwargs,
             )
 
         run_dir = Path(self._model.trainer.save_dir)
@@ -333,7 +324,7 @@ class YOLOAdapter(BaseModelAdapter):
                 "yolo.yaml not found in work_dir and resume_experiment is not set; "
                 "cannot locate original yolo.yaml."
             )
-        work_dir  = Path(config.output_dir) / config.resume_experiment / "work"
+        work_dir  = Path(config.output_dir) / "experiments" / config.resume_experiment / "work"
         candidate = work_dir / "yolo.yaml"
         if candidate.exists():
             self._data_yaml_path = str(candidate)

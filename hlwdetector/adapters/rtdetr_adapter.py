@@ -121,7 +121,7 @@ class RTDeTRAdapter(BaseModelAdapter):
             raise RuntimeError("Call prepare_data() before train().")
 
         hp = config.hyperparameters
-        model_weights = hp.get("model_weights")
+        model_weights = config.model_weights
         epochs = hp.get("epochs")
         imgsz = hp.get("imgsz")
         batch = hp.get("batch")
@@ -315,7 +315,7 @@ class RTDeTRAdapter(BaseModelAdapter):
                 "rtdetr.yaml not found in work_dir and resume_experiment is not set; "
                 "cannot locate original rtdetr.yaml."
             )
-        work_dir = Path(config.output_dir) / config.resume_experiment / "work"
+        work_dir = Path(config.output_dir) / "experiments" / config.resume_experiment / "work"
         candidate = work_dir / "rtdetr.yaml"
         if candidate.exists():
             self._data_yaml_path = str(candidate)

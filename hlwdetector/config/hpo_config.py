@@ -61,6 +61,7 @@ class HPOConfig:
     study_args: StudyArgs                 # optuna.create_study kwargs
     optimize_args: OptimizeArgs = field(default_factory=OptimizeArgs)  # optuna.study.optimize kwargs
 
+    model_weights: str | None = None  # weights filename/path shared by every trial
     metric: str = "map50_95"         # key from MetricsDict to optimize
     output_dir: str = "outputs"
     wandb_project: str | None = None
@@ -151,9 +152,9 @@ class HPOConfig:
             )
 
         # Check the study direction is valid
-        if self.study.direction not in ("maximize", "minimize"):
+        if self.study_args.direction not in ("maximize", "minimize"):
             raise ValueError(
-                f"direction must be 'maximize' or 'minimize', got: {self.study.direction!r}"
+                f"direction must be 'maximize' or 'minimize', got: {self.study_args.direction!r}"
             )
 
         # Check trial count is positive

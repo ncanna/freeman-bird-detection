@@ -1,7 +1,8 @@
 """Hyperparameter optimizer using Optuna"""
 
 import optuna
-from datetime import datetime
+import logging
+import time
 from pathlib import Path
 from typing import Dict
 from dataclasses import asdict
@@ -9,9 +10,12 @@ from dataclasses import asdict
 from optuna.storages import JournalStorage
 from optuna.storages.journal import JournalFileBackend
 
+from hlwdetector.artifact_manager import ArtifactManager
 from hlwdetector.config.hpo_config import HPOConfig
 from hlwdetector.config.experiment_config import ExperimentConfig
 from hlwdetector.runner import ExperimentRunner
+
+logger = logging.getLogger(__name__)
 
 # Maps MetricsDict field names (used by config `metric`) to the Ultralytics per-epoch
 # metric keys reported in the on_fit_epoch_end callback. "f1" has no direct per-epoch
@@ -43,8 +47,11 @@ class HPOptimizer:
     def __init__(self, hpo_config: str | Path):
         # Load HPO config from YAML
         self.config = HPOConfig.from_yaml(hpo_config)
-        self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.id = f"{self.config.study_args.study_name}_{self.timestamp}"
+        # ArtifactManager owns the study output dir (and its single timestamp);
+        # reuse its name as the study-run id so wandb_group == folder name.
+        self.artifacts = ArtifactManager(self.config)
+        self.artifacts.attach_hpo_log_file()
+        self.id = self.artifacts.experiment_name  # "<study_name>_<timestamp>"
 
     def _generate_experiment_config(self, sampled_hparams: Dict, trial_number: int):
         """
@@ -57,6 +64,7 @@ class HPOptimizer:
         return ExperimentConfig(
             model_name=cfg.model_name,
             config_name=f"{cfg.study_args.study_name}_trial_{trial_number}",
+            model_weights=cfg.model_weights,
             hyperparameters=hparams,
             coco_json=cfg.coco_json,
             images_dir=cfg.images_dir,
@@ -117,24 +125,24 @@ class HPOptimizer:
         """Resolve the Optuna storage backend for the study.
 
         If the config specifies an explicit storage URL, pass it through
-        unchanged. Otherwise default to a Journal file backend rooted under the
-        config output directory, one journal file per study run:
-        ``{output_dir}/hpo/{study_name}_{timestamp}``.
+        unchanged. Otherwise default to a Journal file backend written inside the
+        study output directory owned by the ArtifactManager:
+        ``{output_dir}/hpo/{study_name}_{timestamp}/optuna_journal.log``.
         """
         if storage is not None:
             return storage
-        
-        journal_path = (
-            Path(self.config.output_dir) / "hpo" / f"{self.id}"
+
+        return JournalStorage(
+            JournalFileBackend(str(self.artifacts.optuna_journal_path))
         )
-        journal_path.parent.mkdir(parents=True, exist_ok=True)
-        return JournalStorage(JournalFileBackend(str(journal_path)))
 
     def _objective(self, trial):
         """
         Optimize the configured metric by dynamically creating experiment runners from the
         HPO config and sampled hyperparameters at runtime.
         """
+        start = time.perf_counter()
+
         # Sample hyperparameter search space
         hparams = self.config.hyperparameters
         sampled_hparams = {}
@@ -157,6 +165,8 @@ class HPOptimizer:
                 low, high, kwargs = self._extract_hparam_search_space(spec)
                 sampled_hparams[hp] = suggest(hp, low, high, **kwargs)
 
+        logger.info(f"Sampled hyperparameters for trial {trial.number}: {sampled_hparams}")
+
         # Generate experiment conifg and train model
         experiment_config = self._generate_experiment_config(sampled_hparams, trial.number)
         runner = ExperimentRunner(experiment_config)
@@ -171,12 +181,31 @@ class HPOptimizer:
                 raise optuna.TrialPruned()
 
         runner.adapter._hpo_pruning_callback = _pruning_callback
-        runner.train()
-        metrics = runner.evaluate()
-        runner.tracker.finish()
-        target_metric = self.config.metric
+        try:
+            runner.train()
+            metrics = runner.evaluate()
+        except optuna.TrialPruned:
+            duration = time.perf_counter() - start
+            logger.info(
+                f"Trial {trial.number} pruned after {duration:.1f}s"
+            )
+            self.artifacts.record_trial(
+                trial.number, sampled_hparams, None, "pruned", duration
+            )
+            raise
+        finally:
+            runner.tracker.finish()  # close the W&B run in all cases
 
-        return getattr(metrics, target_metric)
+        value = getattr(metrics, self.config.metric)
+        duration = time.perf_counter() - start
+        logger.info(
+            f"Trial {trial.number} complete: {self.config.metric}={value} "
+            f"in {duration:.1f}s"
+        )
+        self.artifacts.record_trial(
+            trial.number, sampled_hparams, value, "complete", duration
+        )
+        return value
 
     def run_study(self):
         """
@@ -190,3 +219,19 @@ class HPOptimizer:
         study_kwargs["storage"] = self._build_storage(study_kwargs.get("storage"))
         study = optuna.create_study(**study_kwargs)
         study.optimize(self._objective, **optimize_kwargs)
+
+        best = study.best_trial
+        best_config_name = f"{self.config.study_args.study_name}_trial_{best.number}"
+        logger.info(
+            f"Study complete: best config {best_config_name} "
+            f"({self.config.metric}={best.value})"
+        )
+        self.artifacts.save_study_summary(
+            best.number,
+            best_config_name,
+            best.value,
+            best.params,
+            len(study.trials),
+            self.config.study_args.direction,
+        )
+        return study

@@ -105,8 +105,8 @@ All fields with relative paths are resolved relative to the YAML file location.
 ```yaml
 config_name: yolo11_h23          # Unique identifier (used in output dir name)
 model_name: yolo                  # Registered adapter name: yolo | rtdetr
+model_weights: yolo11n.pt         # Weights filename or path
 hyperparameters:
-  model_weights: yolo11n.pt       # Weights filename or path
   epochs: 50
   imgsz: 640
   batch: 32

@@ -1,7 +1,7 @@
 model_name: yolo
 config_name: yolo11_h23
+model_weights: yolo11n.pt
 hyperparameters:
-  model_weights: yolo11n.pt
   epochs: 50
   imgsz: 640
   batch: 16
