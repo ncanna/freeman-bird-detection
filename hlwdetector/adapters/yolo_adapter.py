@@ -127,6 +127,10 @@ class YOLOAdapter(BaseModelAdapter):
         batch = hp.get("batch")
         device = hp.get("device")
 
+        # Collect extra hyperparameters (augmentation, lr, etc.) to pass through
+        _reserved_keys = {"model_weights", "epochs", "imgsz", "batch", "device"}
+        extra_kwargs = {k: v for k, v in hp.items() if k not in _reserved_keys}
+
         # Point Ultralytics runs to outputs directory
         runs_dir = str(Path(self.work_dir) / "runs")
         #runs_dir = str(Path(config.output_dir) / "runs")
@@ -147,6 +151,7 @@ class YOLOAdapter(BaseModelAdapter):
                 device=device,
                 project=runs_dir,
                 name="train",
+                **extra_kwargs,
             )
         else:  # resume: load pretrained weights, train fresh with full hparam control
             self._discover_data_yaml(config)
@@ -160,6 +165,7 @@ class YOLOAdapter(BaseModelAdapter):
                 device=device,
                 project=runs_dir,
                 name="train",
+                **extra_kwargs,
             )
 
         run_dir = Path(self._model.trainer.save_dir)

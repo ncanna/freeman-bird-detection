@@ -4,9 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
+<<<<<<< Updated upstream
 Georgia Tech Mountain Bird Lab — automated bird detection in camera trap videos from the Freeman site. The repository is a full ML experimentation framework (`hlwdetector`) for training and evaluating detection models (YOLO, RT-DETR) on camera trap footage.
 
 > **Ignore the `archive/` directory.** It holds legacy code, models, and annotations that are no longer part of the framework (including the retired MegaDetector adapter). Do not read, edit, reference, or import from `archive/` when working on the active codebase.
+=======
+Georgia Tech Mountain Bird Lab — automated bird detection in camera trap videos from the Freeman site. The repository is a full ML experimentation framework (`hlwdetector`) for training and evaluating multiple detection models (YOLO, RT-DETR, Swin Transformer) on camera trap footage.
+>>>>>>> Stashed changes
 
 ## Repository Structure
 
@@ -22,6 +26,11 @@ hlwdetector/              # Core framework package
     base.py               # BaseModelAdapter ABC
     yolo_adapter.py       # YOLO11/YOLO26 adapter
     rtdetr_adapter.py     # RT-DETR adapter
+<<<<<<< Updated upstream
+=======
+    swin_adapter.py       # Swin Transformer + Faster R-CNN adapter (timm + torchvision)
+    megadetector_adapter.py  # MegaDetector V6 (pretrained, no fine-tuning)
+>>>>>>> Stashed changes
   visualization/
     pipeline.py           # VisualizationPipeline
     video_annotator.py    # Overlays GT + predictions and writes MP4
@@ -104,7 +113,11 @@ All fields with relative paths are resolved relative to the YAML file location.
 
 ```yaml
 config_name: yolo11_h23          # Unique identifier (used in output dir name)
+<<<<<<< Updated upstream
 model_name: yolo                  # Registered adapter name: yolo | rtdetr
+=======
+model_name: yolo                  # Registered adapter name: yolo | rtdetr | swin
+>>>>>>> Stashed changes
 hyperparameters:
   model_weights: yolo11n.pt       # Weights filename or path
   epochs: 50
@@ -160,10 +173,11 @@ Lists video stems; frames are matched at runtime by filename prefix.
 
 ## Key Dependencies
 - **ultralytics** — YOLO and RT-DETR model training and inference
+- **timm** — Swin Transformer backbone with multi-scale feature extraction
 - **supervision** — `sv.Detections` used as the standard detection container throughout
 - **pycocotools** — COCO evaluation (COCOeval)
 - **wandb** — experiment tracking (optional)
-- **torch/torchvision** — deep learning framework
+- **torch/torchvision** — deep learning framework; also provides Faster R-CNN head for Swin adapter
 - **opencv-python** — video and frame I/O
 
 ## Data Sources
