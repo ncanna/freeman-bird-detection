@@ -10,6 +10,7 @@ title hlwdetector — Component Diagram
 package "Entry Points" {
     [ExperimentRunner] <<runner>> $orch
     [CLI\npython -m hlwdetector.runner] <<cli>> $orch
+    [HPOptimizer] <<optimizer>> $orch
 }
 
 [CLI\npython -m hlwdetector.runner] --> [ExperimentRunner]
@@ -61,6 +62,7 @@ package "External Libraries" {
     [wandb] <<library>> $ext
     [opencv-python] <<library>> $ext
     [torch / torchvision] <<library>> $ext
+    [optuna] <<library>> $ext
 }
 
 '─────────────────────────────────────────────────────────
@@ -83,6 +85,10 @@ package "File System" {
 [ExperimentRunner] --> [ArtifactManager]        : creates
 [ExperimentRunner] --> [ExperimentTracker]      : creates
 [ExperimentRunner] --> [VisualizationPipeline]  : calls visualize
+[HPOptimizer]      --> [ExperimentConfig]       : creates per trial
+[HPOptimizer]      --> [ExperimentRunner]       : creates per trial
+[HPOptimizer]      --> [optuna]                 : create_study / optimize
+[HPOptimizer]      --> [ArtifactManager]        : creates (study dir)
 
 '─────────────────────────────────────────────────────────
 ' Adapter registry
@@ -102,6 +108,8 @@ BMA <|.. [RTDETRAdapter]
 ' Data flow
 '─────────────────────────────────────────────────────────
 [ExperimentConfig]  <.. ConfigYAML       : parsed from
+[HPOptimizer]       <.. ConfigYAML       : HPO study config
+[HPOptimizer]       --> OutputsDir       : writes hpo/ study dir
 [DatasetManager]    <.. CocoJSON         : loads
 [DatasetManager]    <.. SplitJSON        : partitions by
 [DatasetManager]    <.. ImagesDir        : resolves frames from

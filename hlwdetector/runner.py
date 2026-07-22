@@ -11,7 +11,7 @@ import logging
 from pathlib import Path
 
 from hlwdetector.artifact_manager import ArtifactManager
-from hlwdetector.config import ExperimentConfig
+from hlwdetector.config.experiment_config import ExperimentConfig
 from hlwdetector.dataset_manager import DatasetManager
 from hlwdetector.registry import get_adapter
 from hlwdetector.tracker import ExperimentTracker
@@ -28,8 +28,11 @@ logger = logging.getLogger(__name__)
 
 
 class ExperimentRunner:
-    def __init__(self, config_path: str) -> None:
-        self.config = ExperimentConfig.from_yaml(config_path)
+    def __init__(self, config: str | Path | ExperimentConfig) -> None:
+        if isinstance(config, ExperimentConfig):
+            self.config = config
+        else:
+            self.config = ExperimentConfig.from_yaml(config)
         self.config.validate()  # raises clear errors if prereqs missing
         self.artifact_manager = ArtifactManager(self.config)
         self.artifact_manager.attach_log_file()
@@ -57,6 +60,8 @@ class ExperimentRunner:
             "val/mAP50": metrics.map50,
             "val/mAP50_95": metrics.map50_95,
         })
+    
+        return metrics  # Added return statement for HPO
 
     def predict(self):
         self.detections = self.adapter.predict(self.config)

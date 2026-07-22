@@ -6,7 +6,7 @@ import json
 import logging
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Dict
 
 import supervision as sv
 from ultralytics import YOLO, settings
@@ -21,7 +21,7 @@ from hlwdetector.adapters.base import (
 from hlwdetector.registry import register_adapter
 
 if TYPE_CHECKING:
-    from hlwdetector.config import ExperimentConfig
+    from hlwdetector.config.experiment_config import ExperimentConfig
     from hlwdetector.dataset_manager import DatasetManager
 
 logger = logging.getLogger(__name__)
@@ -45,6 +45,8 @@ class YOLOAdapter(BaseModelAdapter):
         self._model = None
         self._data_yaml_path: str | None = None
         self._training_result: TrainingResult | None = None
+        # Optional (epoch, metrics) -> None hook, set by HPO; may raise optuna.TrialPruned.
+        self._hpo_pruning_callback = None
 
     # ------------------------------------------------------------------ #
     # prepare_data
@@ -121,11 +123,8 @@ class YOLOAdapter(BaseModelAdapter):
             raise RuntimeError("Call prepare_data() before train().")
 
         hp = config.hyperparameters
-        model_weights = hp.get("model_weights")
-        epochs = hp.get("epochs")
-        imgsz = hp.get("imgsz")
-        batch = hp.get("batch")
-        device = hp.get("device")
+        model_weights = config.model_weights
+        train_kwargs = {k: v for k, v in hp.items()}
 
         # Point Ultralytics runs to outputs directory
         runs_dir = str(Path(self.work_dir) / "runs")
@@ -141,12 +140,9 @@ class YOLOAdapter(BaseModelAdapter):
             self._register_epoch_callback()
             self._model.train(
                 data=self._data_yaml_path,
-                epochs=epochs,
-                imgsz=imgsz,
-                batch=batch,
-                device=device,
                 project=runs_dir,
                 name="train",
+                **train_kwargs,
             )
         else:  # resume: load pretrained weights, train fresh with full hparam control
             self._discover_data_yaml(config)
@@ -154,12 +150,9 @@ class YOLOAdapter(BaseModelAdapter):
             self._register_epoch_callback()
             self._model.train(
                 data=self._data_yaml_path,
-                epochs=epochs,
-                imgsz=imgsz,
-                batch=batch,
-                device=device,
                 project=runs_dir,
                 name="train",
+                **train_kwargs,
             )
 
         run_dir = Path(self._model.trainer.save_dir)
@@ -256,7 +249,7 @@ class YOLOAdapter(BaseModelAdapter):
         """
         adapter = self
 
-        def on_fit_epoch_end(trainer) -> None:
+        def on_fit_epoch_end(trainer) -> Dict:
             epoch = trainer.epoch + 1  # Ultralytics epochs are 0-indexed
             metrics: dict = {}
             if trainer.metrics:
@@ -269,6 +262,10 @@ class YOLOAdapter(BaseModelAdapter):
                 metrics.update({k: float(v) for k, v in trainer.lr.items()})
             if metrics:
                 adapter._tracker.log_wandb_step(metrics, step=epoch)
+            if adapter._hpo_pruning_callback is not None:
+                adapter._hpo_pruning_callback(epoch, metrics)  # may raise optuna.TrialPruned
+
+            return metrics
 
         self._model.add_callback("on_fit_epoch_end", on_fit_epoch_end)
 
@@ -327,7 +324,7 @@ class YOLOAdapter(BaseModelAdapter):
                 "yolo.yaml not found in work_dir and resume_experiment is not set; "
                 "cannot locate original yolo.yaml."
             )
-        work_dir  = Path(config.output_dir) / config.resume_experiment / "work"
+        work_dir  = Path(config.output_dir) / "experiments" / config.resume_experiment / "work"
         candidate = work_dir / "yolo.yaml"
         if candidate.exists():
             self._data_yaml_path = str(candidate)

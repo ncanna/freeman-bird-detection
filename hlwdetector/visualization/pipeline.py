@@ -14,7 +14,7 @@ from hlwdetector.visualization.video_annotator import VideoAnnotator
 if TYPE_CHECKING:
     from hlwdetector.adapters.base import DetectionResult
     from hlwdetector.artifact_manager import ArtifactManager
-    from hlwdetector.config import ExperimentConfig
+    from hlwdetector.config.experiment_config import ExperimentConfig
     from hlwdetector.dataset_manager import DatasetManager, SplitView
 
 logger = logging.getLogger(__name__)

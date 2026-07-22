@@ -1,4 +1,4 @@
-"""RTDeTRAdapter — Ultralytics RT-DETR, mirrors YOLOAdapter exactly."""
+"""RTDETRAdapter — Ultralytics RT-DETR, mirrors YOLOAdapter exactly."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from hlwdetector.adapters.base import (
 from hlwdetector.registry import register_adapter
 
 if TYPE_CHECKING:
-    from hlwdetector.config import ExperimentConfig
+    from hlwdetector.config.experiment_config import ExperimentConfig
     from hlwdetector.dataset_manager import DatasetManager
 
 logger = logging.getLogger(__name__)
@@ -32,7 +32,7 @@ if _PROJECT_ROOT not in sys.path:
 
 
 @register_adapter("rtdetr")
-class RTDeTRAdapter(BaseModelAdapter):
+class RTDETRAdapter(BaseModelAdapter):
     """RT-DETR adapter backed by Ultralytics.
 
     Hyperparameters (config.hyperparameters):
@@ -121,7 +121,7 @@ class RTDeTRAdapter(BaseModelAdapter):
             raise RuntimeError("Call prepare_data() before train().")
 
         hp = config.hyperparameters
-        model_weights = hp.get("model_weights")
+        model_weights = config.model_weights
         epochs = hp.get("epochs")
         imgsz = hp.get("imgsz")
         batch = hp.get("batch")
@@ -315,7 +315,7 @@ class RTDeTRAdapter(BaseModelAdapter):
                 "rtdetr.yaml not found in work_dir and resume_experiment is not set; "
                 "cannot locate original rtdetr.yaml."
             )
-        work_dir = Path(config.output_dir) / config.resume_experiment / "work"
+        work_dir = Path(config.output_dir) / "experiments" / config.resume_experiment / "work"
         candidate = work_dir / "rtdetr.yaml"
         if candidate.exists():
             self._data_yaml_path = str(candidate)

@@ -1,0 +1,42 @@
+# YOLO26 Optuna study configuration
+model_name: yolo
+model_weights: yolo26n.pt
+metric: map50_95
+
+# Canonical data inputs shared by every trial to generate ExperimentConfi
+coco_json: data/h23/instances_subset.json
+images_dir: data/h23/images
+split_json: data/h23/split_h23_subset.json
+output_dir: outputs
+wandb_project: bird-detection
+random_seed: 42
+
+# Optuna arguments
+study_args:  # kwargs that will be passed into optuna.create_study
+  study_name: yolo26_hpo
+  direction: maximize
+  sampler: TPE  # Note: default n_startup_trials=10
+  pruner: hyperband
+  storage: ~
+optimize_args:  # kwargs that will be passed into optuna.study.optimize
+  n_trials: 2
+  timeout: ~
+
+# Hyperparameter search space
+hyperparameters:
+  static:
+    epochs: 50
+    imgsz: 640
+  categorical:
+     batch: [8, 16, 32]
+     optimizer: [SGD, MuSGD, Adam, AdamW]
+  int:
+  float:
+    lr0:
+      - 0.0001
+      - 0.01
+      - log: True
+    lrf:  # defined as a fraction of lr0
+      - 0.01
+      - 1.0
+      - log: True

@@ -10,7 +10,7 @@ import wandb
 
 if TYPE_CHECKING:
     from hlwdetector.artifact_manager import ArtifactManager
-    from hlwdetector.config import ExperimentConfig
+    from hlwdetector.config.experiment_config import ExperimentConfig
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +49,9 @@ class ExperimentTracker:
                 "name": artifact_manager.experiment_name,
                 "dir": Path(artifact_manager.experiment_dir)
             }
+
+            if config.wandb_group is not None:
+                init_kwargs["group"] = config.wandb_group
 
             if wandb_run_id is not None:
                 # Attaching to an existing experiment (e.g. eval after training)
