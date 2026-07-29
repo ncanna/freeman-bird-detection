@@ -12,3 +12,4 @@ wandb/
 runs/
 slurm/logs/
 slurm/generated/
+archive

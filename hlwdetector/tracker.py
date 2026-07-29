@@ -11,7 +11,7 @@ import wandb
 
 if TYPE_CHECKING:
     from hlwdetector.artifact_manager import ArtifactManager
-    from hlwdetector.config import ExperimentConfig
+    from hlwdetector.config.experiment_config import ExperimentConfig
 
 logger = logging.getLogger(__name__)
 
@@ -81,8 +81,20 @@ class ExperimentTracker:
                 # read it from the resume_experiment's config.json.
                 run_id = None
                 if config.resume_experiment is not None:
-                    orig_cfg = Path(config.output_dir) / config.resume_experiment / "config.json"
-                    if orig_cfg.exists():
+                    resume_candidates = (
+                        Path(config.output_dir)
+                        / "experiments"
+                        / config.resume_experiment
+                        / "config.json",
+                        Path(config.output_dir)
+                        / config.resume_experiment
+                        / "config.json",
+                    )
+                    orig_cfg = next(
+                        (path for path in resume_candidates if path.exists()),
+                        None,
+                    )
+                    if orig_cfg is not None:
                         run_id = json.loads(orig_cfg.read_text()).get("wandb_run_id")
                 if run_id:
                     init_kwargs["resume"] = "must"

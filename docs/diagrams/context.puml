@@ -18,13 +18,13 @@ UpdateRelStyle($arrowText, $arrowLine)
 
 Person(researcher, "ML Researcher", "Bird Lab researcher who configures, runs, and reviews detection experiments")
 
-System(hlwdetector, "hlwdetector", "ML experimentation framework that trains, evaluates, and visualizes bird-detection models on camera-trap footage")
+System(hlwdetector, "hlwdetector", "ML experimentation framework that trains, tunes (Optuna HPO), evaluates, and visualizes bird-detection models on camera-trap footage")
 
 System_Ext(wandb, "Weights & Biases", "SaaS experiment tracking — metrics, artifacts, and video logging (optional)")
 System_Ext(ultralytics, "Ultralytics Model Zoo", "Source of pretrained YOLO / RT-DETR weights downloaded on first use")
 System_Ext(dataset_src, "Camera-Trap Data Source", "Freeman-site videos + COCO annotations downloaded for training/eval")
 
-Rel(researcher, hlwdetector, "Runs experiments, reviews metrics & annotated videos", "CLI / Python API")
+Rel(researcher, hlwdetector, "Runs experiments & HPO studies, reviews metrics & annotated videos", "CLI / Python API")
 Rel(hlwdetector, wandb, "Logs metrics, artifacts, videos", "HTTPS")
 Rel(hlwdetector, ultralytics, "Downloads pretrained weights", "HTTPS")
 Rel(dataset_src, hlwdetector, "Provides COCO datasets & frames", "Files on disk")

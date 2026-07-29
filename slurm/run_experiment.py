@@ -1,7 +1,7 @@
 """Run a single experiment end-to-end (train -> eval -> predict -> visualize).
 
 Usage:
-    python slurm/run_experiment.py configs/yolo11_h23_full.yaml
+    python slurm/run_experiment.py configs/experiment/yolo11_h23_full.yaml
 
 Mirrors the run_experiments.ipynb pipeline but as a plain script so it can be
 submitted to SLURM and survive SSH disconnects.

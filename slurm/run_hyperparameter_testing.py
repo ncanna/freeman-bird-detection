@@ -39,7 +39,7 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 
-from hlwdetector.config import ExperimentConfig
+from hlwdetector.config.experiment_config import ExperimentConfig
 
 
 EPOCHS = 50
@@ -50,14 +50,18 @@ STUDY_NAME = "h23_hyperparameter_sensitivity"
 MODEL_ORDER = ("yolo11", "yolo26", "rtdetr")
 MATRIX_ORDER = ("remaining-core", "initial")
 BASE_CONFIGS = {
-    "yolo11": REPO_ROOT / "configs/yolo11_h23_full.yaml",
-    "yolo26": REPO_ROOT / "configs/yolo26_h23_full.yaml",
-    "rtdetr": REPO_ROOT / "configs/rtdetr_h23_full.yaml",
+    "yolo11": REPO_ROOT / "configs/experiment/yolo11_h23_full.yaml",
+    "yolo26": REPO_ROOT / "configs/experiment/yolo26_h23_full.yaml",
+    "rtdetr": REPO_ROOT / "configs/experiment/rtdetr_h23_full.yaml",
+}
+EXPECTED_MODEL_WEIGHTS = {
+    "yolo11": "yolo11n.pt",
+    "yolo26": "yolo26n.pt",
+    "rtdetr": "rtdetr-l.pt",
 }
 EXPECTED_BASELINE_HYPERPARAMETERS = {
     "yolo11": {
-        "model_weights": "yolo11n.pt",
-        "epochs": EPOCHS,
+        "epochs": 100,
         "imgsz": 640,
         "batch": 32,
         "amp": True,
@@ -76,8 +80,7 @@ EXPECTED_BASELINE_HYPERPARAMETERS = {
         "seed": 0,
     },
     "yolo26": {
-        "model_weights": "yolo26n.pt",
-        "epochs": EPOCHS,
+        "epochs": 100,
         "imgsz": 640,
         "batch": 32,
         "amp": True,
@@ -96,8 +99,7 @@ EXPECTED_BASELINE_HYPERPARAMETERS = {
         "seed": 0,
     },
     "rtdetr": {
-        "model_weights": "rtdetr-l.pt",
-        "epochs": EPOCHS,
+        "epochs": 100,
         "imgsz": 640,
         "batch": 32,
         "amp": True,
@@ -325,6 +327,11 @@ def load_base_configs() -> dict[str, dict[str, Any]]:
         raw = dataclasses.asdict(config)
         hyperparameters = raw["hyperparameters"]
 
+        if raw["model_weights"] != EXPECTED_MODEL_WEIGHTS[model]:
+            raise ValueError(
+                f"{path.relative_to(REPO_ROOT)} has model_weights="
+                f"{raw['model_weights']!r}; expected {EXPECTED_MODEL_WEIGHTS[model]!r}"
+            )
         expected = EXPECTED_BASELINE_HYPERPARAMETERS[model]
         mismatches = {
             key: {"expected": value, "found": hyperparameters.get(key)}
@@ -414,6 +421,9 @@ def make_run_config(spec: RunSpec, base_config: dict[str, Any]) -> dict[str, Any
     baseline_hyperparameters = base_config["hyperparameters"]
     hyperparameters = run_config["hyperparameters"]
 
+    # The canonical full-run configs use 100 epochs. Sensitivity testing has a
+    # fixed 50-epoch protocol, independent of the one parameter varied per run.
+    hyperparameters["epochs"] = EPOCHS
     if spec.config_key is not None:
         hyperparameters[spec.config_key] = spec.value
 
@@ -422,7 +432,9 @@ def make_run_config(spec: RunSpec, base_config: dict[str, Any]) -> dict[str, Any
         for key in set(baseline_hyperparameters) | set(hyperparameters)
         if baseline_hyperparameters.get(key) != hyperparameters.get(key)
     }
-    expected = set() if spec.is_baseline else {spec.config_key}
+    expected = {"epochs"} if baseline_hyperparameters["epochs"] != EPOCHS else set()
+    if not spec.is_baseline:
+        expected.add(spec.config_key)
     if changed != expected:
         raise RuntimeError(
             f"{spec.run_name} changes {sorted(changed)}; expected only {sorted(expected)}"
@@ -630,13 +642,20 @@ def main() -> int:
 
         assert manifest is not None
         existing = manifest["submissions"].get(spec.run_name)
-        output_dir = Path(config["output_dir"]) / spec.run_name
+        output_candidates = (
+            Path(config["output_dir"]) / "experiments" / spec.run_name,
+            Path(config["output_dir"]) / spec.run_name,
+        )
         if existing is not None:
             print(f"     SKIP: already recorded as SLURM job {existing['job_id']}")
             skipped += 1
             continue
-        if output_dir.exists():
-            print(f"     SKIP: output directory already exists: {output_dir}")
+        existing_output = next(
+            (path for path in output_candidates if path.exists()),
+            None,
+        )
+        if existing_output is not None:
+            print(f"     SKIP: output directory already exists: {existing_output}")
             skipped += 1
             continue
 

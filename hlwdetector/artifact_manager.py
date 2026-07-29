@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import dataclasses
 import json
 import logging
@@ -16,49 +17,81 @@ from hlwdetector import paths
 
 if TYPE_CHECKING:
     from hlwdetector.adapters.base import MetricsDict, TrainingResult
-    from hlwdetector.config import ExperimentConfig
+    from hlwdetector.config.experiment_config import ExperimentConfig
+    from hlwdetector.config.hpo_config import HPOConfig
 
 logger = logging.getLogger(__name__)
 
 
 class ArtifactManager:
-    """Manages all output paths for an experiment run."""
+    """Manages all output paths for an experiment or HPO study run."""
 
-    def __init__(self, config: "ExperimentConfig") -> None:
-        if config.run_name is not None:
-            self.experiment_name = config.run_name
-        else:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            self.experiment_name = f"{config.config_name}_{timestamp}"
+    def __init__(self, config: "ExperimentConfig" | "HPOConfig") -> None:
+        # Local import avoids a load-time circular import; HPOConfig lacks the
+        # config_name/resume_* fields the experiment path relies on.
+        from hlwdetector.config.hpo_config import HPOConfig
 
-        experiment_dir = (Path(config.output_dir) / self.experiment_name).resolve()
-        if config.run_name is not None and experiment_dir.exists():
-            raise FileExistsError(
-                f"Explicit run_name already exists: {experiment_dir}. "
-                "Choose a new run number to avoid mixing experiment artifacts."
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.is_hpo = isinstance(config, HPOConfig)
+
+        if self.is_hpo:  # HPO study: <output_dir>/hpo/<study_name>_<timestamp>, no work/viz dirs.
+            self.study_name = config.study_args.study_name
+            self.experiment_name = f"{self.study_name}_{timestamp}"
+            self.experiment_dir = (
+                Path(config.output_dir) / "hpo" / self.experiment_name
+            ).resolve()
+            self.experiment_dir.mkdir(parents=True, exist_ok=True)
+            self.optuna_journal_path = self.experiment_dir / "optuna_journal.log"
+            self.trials_csv_path = self.experiment_dir / "trials.csv"
+            self._trials_csv_fieldnames: list[str] | None = None
+            logger.info("HPO study directory: %s", self.experiment_dir)
+            return
+
+        else:  # Experiment run: <output_dir>/experiments/<config_name>_<timestamp>.
+            self.experiment_name = (
+                config.run_name
+                if config.run_name is not None
+                else f"{config.config_name}_{timestamp}"
             )
+            experiments_root = Path(config.output_dir) / "experiments"
 
-        if config.resume_from is not None:
-            original_dir = (Path(config.output_dir) / config.resume_experiment).resolve()
-            if not original_dir.exists():
-                raise FileNotFoundError(
-                    f"Original experiment dir not found: {original_dir}"
+            # Validate the resume target before creating the new dir, so a bad
+            # resume doesn't leave a stray empty directory behind.
+            original_dir = None
+            if config.resume_from is not None:
+                resume_candidates = (
+                    experiments_root / config.resume_experiment,
+                    Path(config.output_dir) / config.resume_experiment,
                 )
-            self.experiment_dir = experiment_dir
-            self.experiment_dir.mkdir(parents=True, exist_ok=True)
-            logger.info("Resuming %s -> new dir: %s", original_dir.name, self.experiment_dir)
-            self._stamp_resumed_in(original_dir, self.experiment_dir)
-        else:
-            self.experiment_dir = experiment_dir
-            self.experiment_dir.mkdir(parents=True, exist_ok=True)
-            logger.info("Experiment directory: %s", self.experiment_dir)
+                original_dir = next(
+                    (path.resolve() for path in resume_candidates if path.exists()),
+                    None,
+                )
+                if original_dir is None:
+                    raise FileNotFoundError(
+                        "Original experiment dir not found; checked: "
+                        + ", ".join(str(path.resolve()) for path in resume_candidates)
+                    )
 
-        self.work_dir = self.experiment_dir / "work"
-        self.work_dir.mkdir(parents=True, exist_ok=True)
+            self.experiment_dir = (experiments_root / self.experiment_name).resolve()
+            if config.run_name is not None and self.experiment_dir.exists():
+                raise FileExistsError(
+                    f"Explicit run_name already exists: {self.experiment_dir}. "
+                    "Choose a new run number to avoid mixing experiment artifacts."
+                )
+            self.experiment_dir.mkdir(parents=True, exist_ok=True)
+            if original_dir is not None:
+                logger.info("Resuming %s -> new dir: %s", original_dir.name, self.experiment_dir)
+                self._stamp_resumed_in(original_dir, self.experiment_dir)
+            else:
+                logger.info("Experiment directory: %s", self.experiment_dir)
 
-        # Ensure visualizations subdirectory exists
-        self.visualizations_dir = self.experiment_dir / "visualizations"
-        self.visualizations_dir.mkdir(parents=True, exist_ok=True)
+            self.work_dir = self.experiment_dir / "work"
+            self.work_dir.mkdir(parents=True, exist_ok=True)
+
+            # Ensure visualizations subdirectory exists
+            self.visualizations_dir = self.experiment_dir / "visualizations"
+            self.visualizations_dir.mkdir(parents=True, exist_ok=True)
 
     @classmethod
     def from_existing_dir(cls, experiment_dir: "str | Path") -> "ArtifactManager":
@@ -68,6 +101,7 @@ class ArtifactManager:
             raise FileNotFoundError(f"Experiment directory not found: {experiment_dir}")
 
         instance = cls.__new__(cls)
+        instance.is_hpo = False
         instance.experiment_name = experiment_dir.name
         instance.experiment_dir = experiment_dir
         instance.work_dir = experiment_dir / "work"
@@ -100,6 +134,97 @@ class ArtifactManager:
         root.addHandler(handler)
         self._log_handler = handler
         logger.info("Logging to file: %s", log_path)
+
+    # ------------------------------------------------------------------ #
+    # HPO study artifacts
+    # ------------------------------------------------------------------ #
+
+    def attach_hpo_log_file(self, mode: str = "w") -> None:
+        """Add a FileHandler writing hpo.log to the hp_optimizer module logger.
+
+        Attaches to the ``hlwdetector.hp_optimizer`` logger rather than the root
+        logger on purpose: each trial's ExperimentRunner calls attach_log_file(),
+        which strips FileHandlers off the *root* logger. Keeping the HPO handler on
+        the module logger lets it survive across trials. Records still propagate to
+        the console.
+        """
+        log_path = self.experiment_dir / "hpo.log"
+        hpo_logger = logging.getLogger("hlwdetector.hp_optimizer")
+        # Ensure INFO records reach the handler even if the root level is higher.
+        hpo_logger.setLevel(logging.INFO)
+        for h in hpo_logger.handlers[:]:
+            if isinstance(h, logging.FileHandler):
+                h.close()
+                hpo_logger.removeHandler(h)
+        handler = logging.FileHandler(log_path, mode=mode, encoding="utf-8")
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s %(levelname)s %(name)s — %(message)s")
+        )
+        hpo_logger.addHandler(handler)
+        self._hpo_log_handler = handler
+        logger.info("HPO logging to file: %s", log_path)
+
+    def record_trial(
+        self,
+        trial_number: int,
+        sampled_hparams: dict,
+        metric_value: float | None,
+        state: str,
+        duration_s: float,
+    ) -> None:
+        """Append one trial's row to trials.csv (header written on first call)."""
+        row = {
+            "trial_number": trial_number,
+            **sampled_hparams,
+            "metric_value": "" if metric_value is None else metric_value,
+            "state": state,
+            "duration_s": duration_s,
+        }
+        write_header = not self.trials_csv_path.exists()
+        if self._trials_csv_fieldnames is None:
+            self._trials_csv_fieldnames = [
+                "trial_number",
+                *sampled_hparams.keys(),
+                "metric_value",
+                "state",
+                "duration_s",
+            ]
+        with self.trials_csv_path.open("a", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(
+                f, fieldnames=self._trials_csv_fieldnames, extrasaction="ignore"
+            )
+            if write_header:
+                writer.writeheader()
+            writer.writerow(row)
+        logger.debug("Recorded trial %d (%s) to %s", trial_number, state, self.trials_csv_path)
+
+    def save_study_summary(
+        self,
+        best_trial_number: int,
+        best_config_name: str,
+        best_value: float,
+        best_params: dict,
+        n_trials: int,
+        direction: str,
+        total_time_s: float,
+    ) -> None:
+        """Write study_summary.json describing the best trial and study size."""
+        total_time = int(total_time_s)
+        hours, remainder = divmod(total_time, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        self._write_json(
+            "study_summary.json",
+            {
+                "study_name": self.study_name,
+                "best_trial_number": best_trial_number,
+                "best_config_name": best_config_name,
+                "best_value": best_value,
+                "best_params": best_params,
+                "n_trials": n_trials,
+                "direction": direction,
+                "total_time": f"{hours:02d}:{minutes:02d}:{seconds:02d}",
+            },
+        )
 
     def _stamp_resumed_in(self, original_dir: Path, new_dir: Path) -> None:
         """Append resumed_in field to the original experiment's config.json."""
