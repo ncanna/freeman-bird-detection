@@ -65,6 +65,8 @@ class HPOConfig:
     metric: str = "map50_95"         # key from MetricsDict to optimize
     output_dir: str = "outputs"
     wandb_project: str | None = None
+    wandb_entity: str | None = None
+    wandb_tags: list[str] = field(default_factory=list)
     random_seed: int = 42
 
     # Fields holding filesystem paths — serialized repo-relative, resolved on load.
@@ -161,7 +163,8 @@ class HPOConfig:
         if self.optimize_args.n_trials <= 0:
             raise ValueError(f"n_trials must be positive, got: {self.optimize_args.n_trials}")
 
-        # Light structural check of the search space; HPOptimizer validates range specs.
+        # Structural checks keep malformed studies from creating output folders
+        # or starting expensive trials.
         if not isinstance(self.hyperparameters, dict):
             raise ValueError(
                 f"hyperparameters must be a dict of search-space tiers, got: "
@@ -173,3 +176,58 @@ class HPOConfig:
                 f"hyperparameters has unknown tier(s) {sorted(unknown_tiers)}; "
                 f"expected a subset of {HPARAM_CATEGORIES}"
             )
+
+        static = self.hyperparameters.get("static") or {}
+        categorical = self.hyperparameters.get("categorical") or {}
+        int_ranges = self.hyperparameters.get("int") or {}
+        float_ranges = self.hyperparameters.get("float") or {}
+        for tier_name, tier in (
+            ("static", static),
+            ("categorical", categorical),
+            ("int", int_ranges),
+            ("float", float_ranges),
+        ):
+            if not isinstance(tier, dict):
+                raise ValueError(
+                    f"hyperparameters.{tier_name} must be a mapping, got "
+                    f"{type(tier).__name__}"
+                )
+
+        sampled_names = [
+            *categorical.keys(),
+            *int_ranges.keys(),
+            *float_ranges.keys(),
+        ]
+        if not sampled_names:
+            raise ValueError("HPO search space must contain at least one sampled parameter")
+        duplicates = {
+            name for name in sampled_names if sampled_names.count(name) > 1
+        }
+        overlap = set(static) & set(sampled_names)
+        if duplicates or overlap:
+            raise ValueError(
+                "Hyperparameter names must appear in exactly one tier; "
+                f"duplicates={sorted(duplicates)}, static_overlap={sorted(overlap)}"
+            )
+
+        for name, choices in categorical.items():
+            if not isinstance(choices, list) or not choices:
+                raise ValueError(
+                    f"categorical hyperparameter {name!r} must have a non-empty list"
+                )
+        for tier_name, ranges in (("int", int_ranges), ("float", float_ranges)):
+            for name, spec in ranges.items():
+                if not isinstance(spec, list) or len(spec) < 2:
+                    raise ValueError(
+                        f"{tier_name} hyperparameter {name!r} must be "
+                        "[low, high, optional kwargs]"
+                    )
+                if spec[0] > spec[1]:
+                    raise ValueError(
+                        f"{tier_name} hyperparameter {name!r} has low > high: {spec[:2]}"
+                    )
+                if any(not isinstance(kwargs, dict) for kwargs in spec[2:]):
+                    raise ValueError(
+                        f"{tier_name} hyperparameter {name!r} options after "
+                        "low/high must be mappings"
+                    )

@@ -1,6 +1,6 @@
-# YOLO26n H23 Optuna study informed by the July 2026 OFAT sensitivity results.
+# YOLO11n H23 Optuna study informed by the July 2026 OFAT sensitivity results.
 model_name: yolo
-model_weights: yolo26n.pt
+model_weights: yolo11n.pt
 metric: map50_95
 
 coco_json: data/h23/instances_merged.json
@@ -9,52 +9,50 @@ split_json: data/h23/split.json
 output_dir: outputs
 wandb_project: bird-detection
 wandb_entity: gatech-birdlab
-wandb_tags: [h23, yolo26, sensitivity-informed]
+wandb_tags: [h23, yolo11, sensitivity-informed]
 random_seed: 42
 
 study_args:
-  study_name: h23_yolo26_hpo
+  study_name: h23_yolo11_hpo
   direction: maximize
   sampler: TPE
   pruner: Hyperband
   storage: ~
 optimize_args:
-  n_trials: 30
+  n_trials: 20
   timeout: 46800  # 13 hours; leaves headroom in the 16-hour SLURM allocation
 
 hyperparameters:
   static:
     epochs: 50
+    imgsz: 640
     batch: 32
     device: "0"
     amp: true
     optimizer: MuSGD
     lrf: 0.01
+    cos_lr: false
     momentum: 0.9
-    warmup_epochs: 3.0
     warmup_bias_lr: 0.0
     scale: 0.5
     close_mosaic: 10
     seed: 0
   categorical:
-    cos_lr: [false, true]
-  int:
-    imgsz:
-      - 448
-      - 640
-      - step: 64
+    # The tested middle value (0.5) was harmful; compare the robust endpoints.
+    mosaic: [0.0, 1.0]
+  int: {}
   float:
     lr0:
-      - 0.001
-      - 0.006
+      - 0.004
+      - 0.012
       - log: true
     weight_decay:
       - 0.0001
-      - 0.002
+      - 0.0007
       - log: true
-    mosaic:
-      - 0.25
-      - 0.75
+    warmup_epochs:
+      - 0.0
+      - 3.0
     box:
-      - 4.5
-      - 7.5
+      - 5.0
+      - 8.0

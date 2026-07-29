@@ -106,6 +106,8 @@ class RTDETRAdapter(BaseModelAdapter):
         self._model = None
         self._data_yaml_path: str | None = None
         self._training_result: TrainingResult | None = None
+        # Optional (epoch, metrics) -> None hook set by HPO.
+        self._hpo_pruning_callback = None
 
     # ------------------------------------------------------------------ #
     # prepare_data
@@ -319,6 +321,8 @@ class RTDETRAdapter(BaseModelAdapter):
                 metrics.update({k: float(v) for k, v in trainer.lr.items()})
             if metrics:
                 adapter._tracker.log_wandb_step(metrics, step=epoch)
+            if adapter._hpo_pruning_callback is not None:
+                adapter._hpo_pruning_callback(epoch, metrics)
 
         self._model.add_callback("on_fit_epoch_end", on_fit_epoch_end)
 

@@ -47,23 +47,36 @@ class HPOptimizer:
     def __init__(self, hpo_config: str | Path):
         # Load HPO config from YAML
         self.config = HPOConfig.from_yaml(hpo_config)
+        self.config.validate()
         # ArtifactManager owns the study output dir (and its single timestamp);
         # reuse its name as the study-run id so wandb_group == folder name.
         self.artifacts = ArtifactManager(self.config)
         self.artifacts.attach_hpo_log_file()
         self.id = self.artifacts.experiment_name  # "<study_name>_<timestamp>"
 
+    def _trial_run_name(self, trial_number: int) -> str:
+        """Return the shared local/W&B identity for one trial."""
+        return f"{self.id}_trial_{trial_number:03d}"
+
     def _generate_experiment_config(self, sampled_hparams: Dict, trial_number: int):
         """
-        Dynamically generate experiment configs by combinging sampled hyperparameters with the hpo config at runtime.
+        Dynamically generate an experiment config by combining sampled
+        hyperparameters with the HPO config at runtime.
         """
         cfg = self.config
-        static_hparams = cfg.hyperparameters.get("static")
+        static_hparams = cfg.hyperparameters.get("static") or {}
         hparams = {**static_hparams, **sampled_hparams}
+        run_name = self._trial_run_name(trial_number)
+        tags = list(
+            dict.fromkeys(
+                [*cfg.wandb_tags, "hpo", cfg.model_name, cfg.study_args.study_name]
+            )
+        )
 
         return ExperimentConfig(
             model_name=cfg.model_name,
-            config_name=f"{cfg.study_args.study_name}_trial_{trial_number}",
+            config_name=run_name,
+            run_name=run_name,
             model_weights=cfg.model_weights,
             hyperparameters=hparams,
             coco_json=cfg.coco_json,
@@ -72,7 +85,17 @@ class HPOptimizer:
             output_dir=cfg.output_dir,
             random_seed=cfg.random_seed,
             wandb_project=cfg.wandb_project,
+            wandb_entity=cfg.wandb_entity,
             wandb_group=self.id,
+            wandb_tags=tags,
+            experiment_metadata={
+                "study_type": "hpo",
+                "hpo_study_name": cfg.study_args.study_name,
+                "hpo_group": self.id,
+                "hpo_trial_number": trial_number,
+                "hpo_metric": cfg.metric,
+                "hpo_sampled_hyperparameters": sampled_hparams,
+            },
         )
 
     def _extract_hparam_search_space(self, spec):
@@ -166,8 +189,10 @@ class HPOptimizer:
                 sampled_hparams[hp] = suggest(hp, low, high, **kwargs)
 
         logger.info(f"Sampled hyperparameters for trial {trial.number}: {sampled_hparams}")
+        trial.set_user_attr("run_name", self._trial_run_name(trial.number))
+        trial.set_user_attr("wandb_group", self.id)
 
-        # Generate experiment conifg and train model
+        # Generate experiment config and train model
         experiment_config = self._generate_experiment_config(sampled_hparams, trial.number)
         runner = ExperimentRunner(experiment_config)
 
@@ -223,7 +248,7 @@ class HPOptimizer:
         total_time = time.perf_counter() - study_start
 
         best = study.best_trial
-        best_config_name = f"{self.config.study_args.study_name}_trial_{best.number}"
+        best_config_name = self._trial_run_name(best.number)
         logger.info(
             f"Study complete: best config {best_config_name} "
             f"({self.config.metric}={best.value})"
