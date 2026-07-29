@@ -9,10 +9,17 @@ hyperparameters:
   amp: true
   optimizer: MuSGD  # pin the current effective Ultralytics auto default
   lr0: 0.01         # explicit so learning-rate sensitivity runs take effect
+  lrf: 0.01
+  cos_lr: false
   momentum: 0.9
+  warmup_epochs: 3.0
   warmup_bias_lr: 0.0
   weight_decay: 0.0005
+  box: 7.5
+  scale: 0.5
   mosaic: 1.0
+  close_mosaic: 10
+  seed: 0
 coco_json: ../data/h23/instances_merged.json
 split_json: ../data/h23/split.json
 images_dir: ../data/h23/images

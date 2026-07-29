@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
-"""Prepare and optionally submit the H23 hyperparameter sensitivity study.
+"""Prepare and optionally submit H23 hyperparameter sensitivity studies.
 
 The default invocation is a safe preview: it prints every planned ``sbatch``
 command without writing configs or submitting jobs. Use ``--write-configs`` to
 inspect generated YAML files, or ``--submit`` to write them and submit one SLURM
 job per run through the existing ``slurm/run_experiment.py`` workflow.
 
+The default ``remaining-core`` matrix contains only follow-up runs that were not
+covered by the completed 2026-07-14 baseline/LR/weight-decay study. The original
+18-run matrix remains available as ``--matrix initial``.
+
 Examples:
-    python slurm/run_hyperparameter_testing.py --date 20260714
-    python slurm/run_hyperparameter_testing.py --write-configs
-    python slurm/run_hyperparameter_testing.py --submit
-    python slurm/run_hyperparameter_testing.py --models rtdetr --parameters learning_rate
+    python slurm/run_hyperparameter_testing.py --date 20260722
+    python slurm/run_hyperparameter_testing.py --date 20260722 --submit
+    python slurm/run_hyperparameter_testing.py --matrix initial --date 20260714
+    python slurm/run_hyperparameter_testing.py --models rtdetr --parameters image_size
+    python slurm/run_hyperparameter_testing.py --models rtdetr --parameters mosaic --settings medium
 """
 
 from __future__ import annotations
@@ -43,6 +48,7 @@ WANDB_ENTITY = "gatech-birdlab"
 STUDY_NAME = "h23_hyperparameter_sensitivity"
 
 MODEL_ORDER = ("yolo11", "yolo26", "rtdetr")
+MATRIX_ORDER = ("remaining-core", "initial")
 BASE_CONFIGS = {
     "yolo11": REPO_ROOT / "configs/yolo11_h23_full.yaml",
     "yolo26": REPO_ROOT / "configs/yolo26_h23_full.yaml",
@@ -57,10 +63,17 @@ EXPECTED_BASELINE_HYPERPARAMETERS = {
         "amp": True,
         "optimizer": "MuSGD",
         "lr0": 0.01,
+        "lrf": 0.01,
+        "cos_lr": False,
         "momentum": 0.9,
+        "warmup_epochs": 3.0,
         "warmup_bias_lr": 0.0,
         "weight_decay": 0.0005,
+        "box": 7.5,
+        "scale": 0.5,
         "mosaic": 1.0,
+        "close_mosaic": 10,
+        "seed": 0,
     },
     "yolo26": {
         "model_weights": "yolo26n.pt",
@@ -70,10 +83,17 @@ EXPECTED_BASELINE_HYPERPARAMETERS = {
         "amp": True,
         "optimizer": "MuSGD",
         "lr0": 0.01,
+        "lrf": 0.01,
+        "cos_lr": False,
         "momentum": 0.9,
+        "warmup_epochs": 3.0,
         "warmup_bias_lr": 0.0,
         "weight_decay": 0.0005,
+        "box": 7.5,
+        "scale": 0.5,
         "mosaic": 1.0,
+        "close_mosaic": 10,
+        "seed": 0,
     },
     "rtdetr": {
         "model_weights": "rtdetr-l.pt",
@@ -83,17 +103,23 @@ EXPECTED_BASELINE_HYPERPARAMETERS = {
         "amp": True,
         "optimizer": "AdamW",
         "lr0": 0.0001,
+        "lrf": 0.01,
+        "cos_lr": False,
         "momentum": 0.9,
+        "warmup_epochs": 3.0,
         "warmup_bias_lr": 0.0,
         "weight_decay": 0.0005,
+        "scale": 0.5,
         "mosaic": 1.0,
+        "close_mosaic": 10,
+        "seed": 0,
     },
 }
 
-# Values listed here are the non-default OFAT runs. Defaults are read from the
-# full H23 configs and represented once by each model's shared baseline run.
-SWEEP_ORDER = ("learning_rate", "weight_decay", "mosaic")
-SWEEPS: dict[str, dict[str, Any]] = {
+# Values are non-default OFAT runs. Defaults come from the full H23 configs.
+# The initial matrix includes shared baseline jobs; the follow-up matrix reuses
+# the completed 2026-07-14 baselines and submits only new comparisons.
+INITIAL_SWEEPS: dict[str, dict[str, Any]] = {
     "learning_rate": {
         "config_key": "lr0",
         "values": {
@@ -122,11 +148,80 @@ SWEEPS: dict[str, dict[str, Any]] = {
     },
 }
 
+REMAINING_CORE_SWEEPS: dict[str, dict[str, Any]] = {
+    "learning_rate": {
+        "config_key": "lr0",
+        "values": {
+            # Refinements around the promising regions from the initial study.
+            "yolo26": (("refine003", 0.003), ("refine005", 0.005)),
+            "rtdetr": (("refine00003", 0.00003), ("refine00005", 0.00005)),
+        },
+    },
+    "image_size": {
+        "config_key": "imgsz",
+        "values": {
+            model: (("low", 512), ("high", 768)) for model in MODEL_ORDER
+        },
+    },
+    "final_lr_fraction": {
+        "config_key": "lrf",
+        "values": {
+            model: (("low", 0.001), ("high", 0.1)) for model in MODEL_ORDER
+        },
+    },
+    "cosine_lr": {
+        "config_key": "cos_lr",
+        "values": {model: (("enabled", True),) for model in MODEL_ORDER},
+    },
+    "warmup_epochs": {
+        "config_key": "warmup_epochs",
+        "values": {
+            model: (("low", 0.0), ("high", 6.0)) for model in MODEL_ORDER
+        },
+    },
+    "scale": {
+        "config_key": "scale",
+        "values": {
+            model: (("low", 0.2), ("high", 0.8)) for model in MODEL_ORDER
+        },
+    },
+    "mosaic": {
+        "config_key": "mosaic",
+        "values": {
+            # Rerun mosaic=0 and add a middle probability; the 1.0 baseline
+            # comparison is supplied by the completed 2026-07-14 baselines.
+            model: (("low", 0.0), ("medium", 0.5)) for model in MODEL_ORDER
+        },
+    },
+    "close_mosaic": {
+        "config_key": "close_mosaic",
+        "values": {
+            model: (("low", 0), ("high", 20)) for model in MODEL_ORDER
+        },
+    },
+    "box_loss": {
+        "config_key": "box",
+        "values": {
+            "yolo11": (("low", 5.0), ("high", 10.0)),
+            "yolo26": (("low", 5.0), ("high", 10.0)),
+        },
+    },
+}
+
+MATRIX_SWEEPS = {
+    "remaining-core": REMAINING_CORE_SWEEPS,
+    "initial": INITIAL_SWEEPS,
+}
+ALL_PARAMETER_ORDER = tuple(
+    dict.fromkeys(parameter for sweeps in MATRIX_SWEEPS.values() for parameter in sweeps)
+)
+
 
 @dataclass(frozen=True)
 class RunSpec:
     sequence: int
     run_date: str
+    matrix: str
     model: str
     parameter: str
     config_key: str | None
@@ -152,6 +247,12 @@ class RunSpec:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
+        "--matrix",
+        choices=MATRIX_ORDER,
+        default="remaining-core",
+        help="Run matrix to prepare (default: remaining-core follow-up study).",
+    )
+    parser.add_argument(
         "--date",
         default=datetime.now().strftime("%Y%m%d"),
         help="Run date used in names (YYYYMMDD; default: today).",
@@ -166,14 +267,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--parameters",
         nargs="+",
-        choices=SWEEP_ORDER,
-        default=list(SWEEP_ORDER),
-        help="Sensitivity parameters to include.",
+        choices=ALL_PARAMETER_ORDER,
+        default=None,
+        help="Sensitivity parameters to include (default: every parameter in the matrix).",
+    )
+    parser.add_argument(
+        "--settings",
+        nargs="+",
+        default=None,
+        help=(
+            "Setting labels to include, such as low, medium, or high "
+            "(default: every setting for the selected parameters)."
+        ),
     )
     parser.add_argument(
         "--skip-baselines",
         action="store_true",
-        help="Omit the three shared default baseline runs.",
+        help="Omit shared baselines from the initial matrix; follow-up matrices omit them already.",
     )
     parser.add_argument(
         "--write-configs",
@@ -226,40 +336,55 @@ def load_base_configs() -> dict[str, dict[str, Any]]:
                 f"{path.relative_to(REPO_ROOT)} does not match the documented "
                 f"{model} baseline: {mismatches}"
             )
-        for sweep_name in SWEEP_ORDER:
-            key = SWEEPS[sweep_name]["config_key"]
-            if key not in hyperparameters:
-                raise ValueError(f"{path.relative_to(REPO_ROOT)} is missing default {key!r}")
+        required_keys = {
+            sweep["config_key"]
+            for sweeps in MATRIX_SWEEPS.values()
+            for sweep in sweeps.values()
+            if model in sweep["values"]
+        }
+        missing = sorted(required_keys - hyperparameters.keys())
+        if missing:
+            raise ValueError(
+                f"{path.relative_to(REPO_ROOT)} is missing study defaults {missing}"
+            )
 
         configs[model] = raw
     return configs
 
 
-def build_run_specs(run_date: str, base_configs: dict[str, dict[str, Any]]) -> list[RunSpec]:
+def build_run_specs(
+    run_date: str,
+    matrix: str,
+    base_configs: dict[str, dict[str, Any]],
+) -> list[RunSpec]:
     specs: list[RunSpec] = []
     sequence = 1
 
-    for model in MODEL_ORDER:
-        specs.append(
-            RunSpec(
-                sequence=sequence,
-                run_date=run_date,
-                model=model,
-                parameter="baseline",
-                config_key=None,
-                setting_label="default",
-                value=None,
-                default_value=None,
+    if matrix == "initial":
+        for model in MODEL_ORDER:
+            specs.append(
+                RunSpec(
+                    sequence=sequence,
+                    run_date=run_date,
+                    matrix=matrix,
+                    model=model,
+                    parameter="baseline",
+                    config_key=None,
+                    setting_label="default",
+                    value=None,
+                    default_value=None,
+                )
             )
-        )
-        sequence += 1
+            sequence += 1
 
-    for parameter in SWEEP_ORDER:
-        sweep = SWEEPS[parameter]
+    for parameter, sweep in MATRIX_SWEEPS[matrix].items():
         config_key = sweep["config_key"]
         for model in MODEL_ORDER:
+            values = sweep["values"].get(model, ())
+            if not values:
+                continue
             default_value = base_configs[model]["hyperparameters"][config_key]
-            for setting_label, value in sweep["values"][model]:
+            for setting_label, value in values:
                 if value == default_value:
                     # A shared baseline already represents every default value.
                     continue
@@ -267,6 +392,7 @@ def build_run_specs(run_date: str, base_configs: dict[str, dict[str, Any]]) -> l
                     RunSpec(
                         sequence=sequence,
                         run_date=run_date,
+                        matrix=matrix,
                         model=model,
                         parameter=parameter,
                         config_key=config_key,
@@ -304,81 +430,28 @@ def make_run_config(spec: RunSpec, base_config: dict[str, Any]) -> dict[str, Any
     if hyperparameters["epochs"] != EPOCHS:
         raise RuntimeError(f"{spec.run_name} does not use exactly {EPOCHS} epochs")
 
-    if spec.is_baseline:
-        comparison_roles = [
-            {
-                "hyperparameter": "lr0",
-                "display_name": "learning_rate",
-                "setting_label": "default",
-                "value": baseline_hyperparameters["lr0"],
-            },
-            {
-                "hyperparameter": "weight_decay",
-                "display_name": "weight_decay",
-                "setting_label": "default",
-                "value": baseline_hyperparameters["weight_decay"],
-            },
-            {
-                "hyperparameter": "mosaic",
-                "display_name": "mosaic",
-                "setting_label": "default_high",
-                "value": baseline_hyperparameters["mosaic"],
-            },
-        ]
-    else:
-        comparison_roles = [
-            {
-                "hyperparameter": spec.config_key,
-                "display_name": spec.parameter,
-                "setting_label": spec.setting_label,
-                "value": spec.value,
-            }
-        ]
-    comparison_tags = [
-        f"comparison-{role['display_name']}-{role['setting_label'].replace('_', '-')}"
-        for role in comparison_roles
-    ]
-
     run_config.update(
         {
             "run_name": spec.run_name,
             "wandb_project": WANDB_PROJECT,
             "wandb_entity": WANDB_ENTITY,
-            "wandb_group": f"{STUDY_NAME}_{spec.run_date}",
-            "wandb_tags": [
-                "h23",
-                "hyperparameter-sensitivity",
-                spec.model,
-                spec.parameter,
-                spec.setting_label,
-                *comparison_tags,
-            ],
             "resume_experiment": None,
             "resume_from": None,
             "experiment_metadata": {
                 "study": STUDY_NAME,
-                "dataset": "h23",
+                "matrix": spec.matrix,
                 "model": spec.model,
-                "model_weights": hyperparameters["model_weights"],
-                "tested_hyperparameter": spec.config_key or "baseline",
-                "hyperparameter_display_name": spec.parameter,
-                "setting_label": spec.setting_label,
-                "tested_value": spec.value,
+                "hyperparameter": spec.parameter,
+                "setting": spec.setting_label,
+                "value": spec.value,
                 "default_value": spec.default_value,
-                "default_or_modified": "default" if spec.is_baseline else "modified",
-                "is_baseline": spec.is_baseline,
-                "epochs": EPOCHS,
-                "run_date": spec.run_date,
-                "run_number": f"{spec.sequence:03d}",
-                "slurm_job_name": spec.run_name,
-                "comparison_roles": comparison_roles,
-                "baseline_hyperparameters": {
-                    name: baseline_hyperparameters[SWEEPS[name]["config_key"]]
-                    for name in SWEEP_ORDER
-                },
             },
         }
     )
+    # These optional fields default to inactive in ExperimentConfig. Omit them
+    # from generated study YAML instead of emitting empty W&B grouping/tagging.
+    run_config.pop("wandb_group", None)
+    run_config.pop("wandb_tags", None)
     return run_config
 
 
@@ -386,8 +459,15 @@ def resolve_cli_path(path: Path) -> Path:
     return path.resolve() if path.is_absolute() else (REPO_ROOT / path).resolve()
 
 
-def config_path_for(spec: RunSpec, generated_root: Path) -> Path:
-    return generated_root / spec.run_date / "configs" / f"{spec.run_name}.yaml"
+def matrix_output_root(generated_root: Path, matrix: str, run_date: str) -> Path:
+    if matrix == "initial":
+        # Preserve the original path and submission manifest layout.
+        return generated_root / run_date
+    return generated_root / matrix.replace("-", "_") / run_date
+
+
+def config_path_for(spec: RunSpec, output_root: Path) -> Path:
+    return output_root / "configs" / f"{spec.run_name}.yaml"
 
 
 def write_config(path: Path, config: dict[str, Any]) -> None:
@@ -413,12 +493,25 @@ def sbatch_command(spec: RunSpec, config_path: Path, sbatch_script: Path) -> lis
     ]
 
 
-def load_manifest(path: Path, run_date: str) -> dict[str, Any]:
+def load_manifest(path: Path, run_date: str, matrix: str) -> dict[str, Any]:
     if not path.exists():
-        return {"study": STUDY_NAME, "run_date": run_date, "submissions": {}}
+        return {
+            "study": STUDY_NAME,
+            "matrix": matrix,
+            "run_date": run_date,
+            "submissions": {},
+        }
     data = json.loads(path.read_text(encoding="utf-8"))
     if data.get("study") != STUDY_NAME or data.get("run_date") != run_date:
         raise ValueError(f"Unexpected submission manifest contents: {path}")
+    # Manifests created by the original script predate the matrix field and are
+    # therefore the initial matrix.
+    manifest_matrix = data.get("matrix", "initial")
+    if manifest_matrix != matrix:
+        raise ValueError(
+            f"Submission manifest {path} belongs to matrix {manifest_matrix!r}, "
+            f"not {matrix!r}"
+        )
     data.setdefault("submissions", {})
     return data
 
@@ -446,20 +539,57 @@ def main() -> int:
         print(f"Configuration error: {exc}", file=sys.stderr)
         return 2
 
+    matrix_sweeps = MATRIX_SWEEPS[args.matrix]
     selected_models = set(args.models)
-    selected_parameters = set(args.parameters)
-    all_specs = build_run_specs(run_date, base_configs)
+    selected_parameters = set(args.parameters or matrix_sweeps.keys())
+    selected_settings = set(args.settings or ())
+    invalid_parameters = selected_parameters - matrix_sweeps.keys()
+    if invalid_parameters:
+        print(
+            f"Parameters {sorted(invalid_parameters)} are not in matrix {args.matrix!r}; "
+            f"choose from {list(matrix_sweeps)}",
+            file=sys.stderr,
+        )
+        return 2
+
+    all_specs = build_run_specs(run_date, args.matrix, base_configs)
+    available_settings = {
+        spec.setting_label
+        for spec in all_specs
+        if not spec.is_baseline
+        and spec.model in selected_models
+        and spec.parameter in selected_parameters
+    }
+    invalid_settings = selected_settings - available_settings
+    if invalid_settings:
+        print(
+            f"Settings {sorted(invalid_settings)} do not match the selected "
+            f"matrix/models/parameters; choose from {sorted(available_settings)}",
+            file=sys.stderr,
+        )
+        return 2
     specs = [
         spec
         for spec in all_specs
         if spec.model in selected_models
         and (
             (spec.is_baseline and not args.skip_baselines)
-            or (not spec.is_baseline and spec.parameter in selected_parameters)
+            or (
+                not spec.is_baseline
+                and spec.parameter in selected_parameters
+                and (
+                    not selected_settings
+                    or spec.setting_label in selected_settings
+                )
+            )
         )
     ]
+    if not specs:
+        print("No runs matched the selected matrix/models/parameters", file=sys.stderr)
+        return 2
 
     generated_root = resolve_cli_path(args.generated_dir)
+    output_root = matrix_output_root(generated_root, args.matrix, run_date)
     sbatch_script = resolve_cli_path(args.sbatch_script)
     if not sbatch_script.exists():
         print(f"SBATCH script not found: {sbatch_script}", file=sys.stderr)
@@ -473,15 +603,18 @@ def main() -> int:
         (REPO_ROOT / "slurm/logs").mkdir(parents=True, exist_ok=True)
 
     write_configs = args.write_configs or args.submit
-    manifest_path = generated_root / run_date / "submissions.json"
-    manifest = load_manifest(manifest_path, run_date) if args.submit else None
+    manifest_path = output_root / "submissions.json"
+    manifest = load_manifest(manifest_path, run_date, args.matrix) if args.submit else None
     submitted = 0
     skipped = 0
 
-    print(f"Prepared {len(specs)} run(s) for {WANDB_ENTITY}/{WANDB_PROJECT}:")
+    print(
+        f"Prepared {len(specs)} {args.matrix} run(s) for "
+        f"{WANDB_ENTITY}/{WANDB_PROJECT}:"
+    )
     for spec in specs:
         config = make_run_config(spec, base_configs[spec.model])
-        config_path = config_path_for(spec, generated_root)
+        config_path = config_path_for(spec, output_root)
         command = sbatch_command(spec, config_path, sbatch_script)
         print(f"{spec.sequence:03d}  {spec.run_name}")
         print(f"     {shlex.join(command)}")
@@ -533,7 +666,7 @@ def main() -> int:
         print(f"Submitted {submitted} job(s); skipped {skipped} duplicate/existing run(s).")
         print(f"Submission manifest: {manifest_path}")
     elif args.write_configs:
-        print(f"Wrote {len(specs)} config(s) under {generated_root / run_date}; no jobs submitted.")
+        print(f"Wrote {len(specs)} config(s) under {output_root}; no jobs submitted.")
     else:
         print("Preview only: no configs were written and no SLURM jobs were submitted.")
         print("Re-run with --write-configs to inspect YAML or --submit to submit jobs.")

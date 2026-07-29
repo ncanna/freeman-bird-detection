@@ -9,7 +9,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import supervision as sv
+import torch
 from ultralytics import RTDETR, settings
+from ultralytics.models.rtdetr.train import RTDETRTrainer
+from ultralytics.models.rtdetr.val import RTDETRDataset
 
 from hlwdetector import paths
 from hlwdetector.adapters.base import (
@@ -34,6 +37,51 @@ DEFAULT_WARMUP_BIAS_LR = 0.0
 _PROJECT_ROOT = str(paths.REPO_ROOT)
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
+
+
+def _collate_fractional_mosaic_batch(batch: list[dict]) -> dict:
+    """Resize mixed RT-DETR image tensors before Ultralytics stacks them.
+
+    RT-DETR's stretched augmentation pipeline emits mosaic samples at twice
+    ``imgsz`` while non-mosaic samples remain at ``imgsz``. Endpoint mosaic
+    probabilities therefore work, but a fractional probability can put both
+    shapes in one batch. Stretch smaller tensors to the largest batch shape;
+    normalized bounding boxes remain valid.
+    """
+    target_height = max(sample["img"].shape[-2] for sample in batch)
+    target_width = max(sample["img"].shape[-1] for sample in batch)
+    resized_batch = []
+    for sample in batch:
+        image = sample["img"]
+        if image.shape[-2:] != (target_height, target_width):
+            sample = dict(sample)
+            sample["img"] = (
+                torch.nn.functional.interpolate(
+                    image.unsqueeze(0).float(),
+                    size=(target_height, target_width),
+                    mode="bilinear",
+                    align_corners=False,
+                )
+                .squeeze(0)
+                .to(dtype=image.dtype)
+            )
+        resized_batch.append(sample)
+    return RTDETRDataset.collate_fn(resized_batch)
+
+
+class _FractionalMosaicRTDETRTrainer(RTDETRTrainer):
+    """Use a shape-safe collator only when RT-DETR mosaic is fractional."""
+
+    def build_dataset(
+        self,
+        img_path: str,
+        mode: str = "val",
+        batch: int | None = None,
+    ):
+        dataset = super().build_dataset(img_path, mode, batch)
+        if mode == "train" and 0.0 < float(self.args.mosaic) < 1.0:
+            dataset.collate_fn = _collate_fractional_mosaic_batch
+        return dataset
 
 
 @register_adapter("rtdetr")
@@ -158,6 +206,7 @@ class RTDeTRAdapter(BaseModelAdapter):
                 data=self._data_yaml_path,
                 project=runs_dir,
                 name="train",
+                trainer=_FractionalMosaicRTDETRTrainer,
                 **train_kwargs,
             )
         else:
