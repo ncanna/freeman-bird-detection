@@ -127,6 +127,10 @@ class RTDETRAdapter(BaseModelAdapter):
         batch = hp.get("batch")
         device = hp.get("device")
 
+        # Collect extra hyperparameters (augmentation, lr, etc.) to pass through
+        _reserved_keys = {"model_weights", "epochs", "imgsz", "batch", "device"}
+        extra_kwargs = {k: v for k, v in hp.items() if k not in _reserved_keys}
+
         runs_dir = str(Path(self.work_dir) / "runs")
         settings.update({
             "runs_dir": runs_dir,
@@ -145,6 +149,7 @@ class RTDETRAdapter(BaseModelAdapter):
                 device=device,
                 project=runs_dir,
                 name="train",
+                **extra_kwargs,
             )
         else:
             self._discover_data_yaml(config)
@@ -158,6 +163,7 @@ class RTDETRAdapter(BaseModelAdapter):
                 device=device,
                 project=runs_dir,
                 name="train",
+                **extra_kwargs,
             )
 
         run_dir = Path(self._model.trainer.save_dir)

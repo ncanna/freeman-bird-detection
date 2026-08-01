@@ -2,3 +2,4 @@
 
 from hlwdetector.adapters import yolo_adapter  # noqa: F401
 from hlwdetector.adapters import rtdetr_adapter  # noqa: F401
+from hlwdetector.adapters import swin_adapter  # noqa: F401
