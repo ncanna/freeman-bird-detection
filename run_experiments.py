@@ -6,7 +6,7 @@ from hlwdetector.runner import ExperimentRunner
 start_total = time.time()
 
 #for config in ["configs/yolo11_h23_full.yaml", "configs/yolo26_h23_full.yaml", "configs/rtdetr_h23_full.yaml"]:
-for config in ["configs/experiment/yolo26_h23_subset.yaml"]:
+for config in ["configs/experiment/swin_h23_subset.yaml"]:
     start = time.time()
     runner = ExperimentRunner(config)
     runner.run_pipeline()

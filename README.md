@@ -106,9 +106,9 @@ visualize_split: test
 - `wandb_group` — optional W&B run group (set automatically for HPO trials)
 - `visualize_split` — which split to visualize after prediction (`"train"`, `"val"`, or `"test"`; default `"test"`)
 - `visualization_fps` — frame rate of the annotated output video (default `29.0`)
-- `resume_from` / `resume_experiment` — see [Resuming Training](#resuming-training) below
+- `resume_weights` / `resume_experiment_name` — see [Resuming Training](#resuming-training) below
 
-All path fields (`coco_json`, `split_json`, `images_dir`, `output_dir`, `resume_from`) are resolved relative to the repository root.
+All path fields (`coco_json`, `split_json`, `images_dir`, `output_dir`, `resume_weights`) are resolved relative to the repository root.
 
 ---
 
@@ -164,11 +164,11 @@ This requires that `config.json` and `model.json` are present in the experiment 
 
 ### Resuming Training
 
-To continue training from a prior checkpoint, set both `resume_from` and `resume_experiment` in the config. `resume_from` points to the model weights file; `resume_experiment` is the name of the original output directory. A new timestamped output directory is created for the resumed run.
+To continue training from a prior checkpoint, set both `resume_weights` and `resume_experiment_name` in the config. `resume_weights` points to the model weights file; `resume_experiment_name` is the name of the original output directory. A new timestamped output directory is created for the resumed run.
 
 ```yaml
-resume_experiment: yolo11_h23_20260402_004059
-resume_from: outputs/yolo11_h23_20260402_004059/work/runs/yolo11_h23_train/weights/last.pt
+resume_experiment_name: yolo11_h23_20260402_004059
+resume_weights: outputs/yolo11_h23_20260402_004059/work/runs/yolo11_h23_train/weights/last.pt
 ```
 
 Both fields must be set together or left unset.

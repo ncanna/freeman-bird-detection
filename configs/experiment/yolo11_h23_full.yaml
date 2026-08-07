@@ -11,5 +11,5 @@ split_json: ../data/h23/split.json
 images_dir: ../data/h23/images
 output_dir: ../outputs
 wandb_project: bird-detection
-#resume_experiment: yolo11_h23_20260402_004059
-#resume_from: ../outputs/yolo11_h23_20260402_004059/work/runs/yolo11_h23_train/weights/last.pt
+#resume_experiment_name: yolo11_h23_20260402_004059
+#resume_weights: ../outputs/yolo11_h23_20260402_004059/work/runs/yolo11_h23_train/weights/last.pt

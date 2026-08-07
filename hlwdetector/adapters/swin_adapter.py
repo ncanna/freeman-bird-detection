@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -50,14 +51,18 @@ if _PROJECT_ROOT not in sys.path:
 
 
 class _COCODetectionDataset(Dataset):
-    """Minimal COCO-format dataset returning images + targets for Faster R-CNN."""
+    """Minimal COCO-format dataset returning images + targets for Faster R-CNN.
+
+    Images and boxes stay at native resolution; the detector's own transform
+    handles resize + normalization.
+    """
 
     def __init__(
         self,
         images: list[dict],
         annotations: list[dict],
         images_dir: str,
-        transform: transforms.Compose | None = None,
+        transform: Callable | None = None,
     ) -> None:
         self._images = images
         self._img_id_to_anns: dict[int, list[dict]] = {}
@@ -117,21 +122,29 @@ class _SwinBackboneWithFPN(nn.Module):
             pretrained=pretrained,
             features_only=True,
             out_indices=(0, 1, 2, 3),
+            # Accept the variable, non-square batches Faster R-CNN's transform emits
+            strict_img_size=False,
         )
         # timm exposes channel dims for each stage
         in_channels_list = self.body.feature_info.channels()  # e.g. [96, 192, 384, 768]
+        self._stage_channels = list(in_channels_list)
+        self.out_channels = 256
 
         self.fpn = FeaturePyramidNetwork(
             in_channels_list=in_channels_list,
-            out_channels=256,
+            out_channels=self.out_channels,
             extra_blocks=LastLevelMaxPool(),
         )
-        self.out_channels = 256
 
     def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
         features = self.body(x)
-        # FPN expects an OrderedDict; timm returns a list
-        feat_dict = {str(i): f for i, f in enumerate(features)}
+        # FPN expects an OrderedDict of NCHW; timm Swin returns a list of NHWC
+        feat_dict = {}
+        for i, f in enumerate(features):
+            expected_c = self._stage_channels[i]
+            if f.shape[-1] == expected_c and f.shape[1] != expected_c:
+                f = f.permute(0, 3, 1, 2).contiguous()
+            feat_dict[str(i)] = f
         return self.fpn(feat_dict)
 
 
@@ -144,8 +157,12 @@ def _build_swin_fasterrcnn(
     backbone_name: str = "swin_tiny_patch4_window7_224",
     num_classes: int = 2,  # background + bird
     pretrained_backbone: bool = True,
+    imgsz: int = 640,
 ) -> FasterRCNN:
-    """Construct Faster R-CNN with a Swin Transformer backbone + FPN."""
+    """Construct Faster R-CNN with a Swin Transformer backbone + FPN.
+
+    `imgsz` sets the short side of the network input; aspect ratio is preserved.
+    """
     backbone = _SwinBackboneWithFPN(backbone_name=backbone_name, pretrained=pretrained_backbone)
 
     # Anchor generator tuned for typical bird sizes in camera trap frames
@@ -157,6 +174,11 @@ def _build_swin_fasterrcnn(
         backbone=backbone,
         num_classes=num_classes,
         rpn_anchor_generator=anchor_generator,
+        # Owns resize + normalization; rescales GT boxes and un-scales predictions
+        min_size=imgsz,
+        max_size=int(round(imgsz * 16 / 9)),
+        image_mean=[0.485, 0.456, 0.406],
+        image_std=[0.229, 0.224, 0.225],
         # Use default ROI pooler settings (7x7, adaptive)
     )
     return model
@@ -203,7 +225,7 @@ class SwinAdapter(BaseModelAdapter):
     Hyperparameters (config.hyperparameters):
         backbone:       timm model name (default: swin_tiny_patch4_window7_224)
         epochs:         number of training epochs
-        imgsz:          input image size (square, default 640)
+        imgsz:          short side of the network input, aspect preserved (default 640)
         batch:          batch size (default 8; SWIN is memory-heavy)
         device:         device string ("0", "cuda", "mps", "cpu", "auto")
         lr:             learning rate (default 0.0001)
@@ -225,7 +247,7 @@ class SwinAdapter(BaseModelAdapter):
         self._test_dataset: _COCODetectionDataset | None = None
         self._test_images: list[dict] | None = None
         self._training_result: TrainingResult | None = None
-        self._transform: transforms.Compose | None = None
+        self._transform: Callable | None = None
 
     # ------------------------------------------------------------------ #
     # prepare_data
@@ -237,17 +259,9 @@ class SwinAdapter(BaseModelAdapter):
         config: "ExperimentConfig",
     ) -> None:
         """Build PyTorch datasets from COCO annotations for each split."""
-        hp = config.hyperparameters
-        imgsz = hp.get("imgsz", 640)
-
-        self._transform = transforms.Compose([
-            transforms.Resize((imgsz, imgsz)),
-            transforms.ToTensor(),
-            transforms.Normalize(
-                mean=[0.485, 0.456, 0.406],
-                std=[0.229, 0.224, 0.225],
-            ),
-        ])
+        # Resize + normalization belong to the model's transform, not here: doing
+        # them on the image alone would leave the COCO boxes in native coordinates.
+        self._transform = transforms.ToTensor()
 
         images_dir = config.images_dir
 
@@ -290,7 +304,7 @@ class SwinAdapter(BaseModelAdapter):
 
     def train(self, config: "ExperimentConfig") -> TrainingResult:
         """Fine-tune Swin + Faster R-CNN and return TrainingResult."""
-        if self._train_dataset is None and config.resume_from is None:
+        if self._train_dataset is None and config.resume_weights is None:
             raise RuntimeError("Call prepare_data() before train().")
 
         hp = config.hyperparameters
@@ -302,19 +316,24 @@ class SwinAdapter(BaseModelAdapter):
         lr_step_size = hp.get("lr_step_size", 20)
         lr_gamma = hp.get("lr_gamma", 0.1)
         device_str = hp.get("device", "auto")
+        imgsz = hp.get("imgsz", 640)
 
         self._device = _resolve_device(device_str)
         logger.info("Training on device: %s", self._device)
 
         # Build model
-        if config.resume_from is not None:
+        if config.resume_weights is not None:
             # Load from checkpoint
-            self._model = _build_swin_fasterrcnn(backbone_name=backbone_name, pretrained_backbone=False)
-            checkpoint = torch.load(config.resume_from, map_location=self._device, weights_only=False)
+            self._model = _build_swin_fasterrcnn(
+                backbone_name=backbone_name, pretrained_backbone=False, imgsz=imgsz
+            )
+            checkpoint = torch.load(config.resume_weights, map_location=self._device, weights_only=False)
             self._model.load_state_dict(checkpoint["model_state_dict"])
-            logger.info("Resumed from checkpoint: %s", config.resume_from)
+            logger.info("Resumed from checkpoint: %s", config.resume_weights)
         else:
-            self._model = _build_swin_fasterrcnn(backbone_name=backbone_name, pretrained_backbone=True)
+            self._model = _build_swin_fasterrcnn(
+                backbone_name=backbone_name, pretrained_backbone=True, imgsz=imgsz
+            )
 
         self._model.to(self._device)
 
@@ -325,9 +344,10 @@ class SwinAdapter(BaseModelAdapter):
             optimizer, step_size=lr_step_size, gamma=lr_gamma
         )
 
-        # Resume optimizer state if available
+        # Resume optimizer state if available. The presence of the resume fields is
+        # itself the signal to restore state — there is no separate opt-in flag.
         start_epoch = 0
-        if config.resume_from is not None and config.resume_training:
+        if config.resume_weights is not None:
             if "optimizer_state_dict" in checkpoint:
                 optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
             if "epoch" in checkpoint:
@@ -335,6 +355,17 @@ class SwinAdapter(BaseModelAdapter):
             if "scheduler_state_dict" in checkpoint:
                 lr_scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
             logger.info("Resuming training from epoch %d", start_epoch)
+
+            # `epochs` is an absolute target, not a count of additional epochs: the
+            # checkpoint stores epochs *completed*, and the loop below runs
+            # range(start_epoch, epochs). Without this the loop is a silent no-op.
+            if start_epoch >= epochs:
+                raise ValueError(
+                    f"Nothing to train: checkpoint {config.resume_weights} already completed "
+                    f"{start_epoch} epochs and hyperparameters.epochs is {epochs}. "
+                    "'epochs' counts total epochs across the resumed run, so set it "
+                    f"above {start_epoch} to continue training."
+                )
 
         # DataLoader
         train_loader = DataLoader(
@@ -354,6 +385,7 @@ class SwinAdapter(BaseModelAdapter):
 
         best_loss = float("inf")
         best_epoch = -1
+        current_lr = optimizer.param_groups[0]["lr"]  # defined even if the loop body never runs
 
         for epoch in range(start_epoch, epochs):
             self._model.train()
@@ -701,23 +733,26 @@ class SwinAdapter(BaseModelAdapter):
         hp = config.hyperparameters
         backbone_name = hp.get("backbone", "swin_tiny_patch4_window7_224")
         device_str = hp.get("device", "auto")
+        imgsz = hp.get("imgsz", 640)
         self._device = _resolve_device(device_str)
 
-        if config.resume_from is not None:
-            weights_path = Path(config.resume_from)
+        if config.resume_weights is not None:
+            weights_path = Path(config.resume_weights)
             if not weights_path.exists():
                 raise FileNotFoundError(f"Weights file not found: {weights_path}")
-            self._model = _build_swin_fasterrcnn(backbone_name=backbone_name, pretrained_backbone=False)
+            self._model = _build_swin_fasterrcnn(
+                backbone_name=backbone_name, pretrained_backbone=False, imgsz=imgsz
+            )
             checkpoint = torch.load(str(weights_path), map_location=self._device, weights_only=False)
             self._model.load_state_dict(checkpoint["model_state_dict"])
-            logger.info("Loaded weights from config.resume_from: %s", weights_path)
+            logger.info("Loaded weights from config.resume_weights: %s", weights_path)
             return
 
         # Attach flow: read best_weights_path from model.json
         model_json_path = Path(self.experiment_dir) / "model.json"
         if not model_json_path.exists():
             raise FileNotFoundError(
-                f"No model loaded, resume_from is not set, and model.json not found in: "
+                f"No model loaded, resume_weights is not set, and model.json not found in: "
                 f"{self.experiment_dir}"
             )
         model_info = json.loads(model_json_path.read_text())
@@ -731,7 +766,9 @@ class SwinAdapter(BaseModelAdapter):
             raise FileNotFoundError(
                 f"best_weights_path from model.json does not exist: {weights_path}"
             )
-        self._model = _build_swin_fasterrcnn(backbone_name=backbone_name, pretrained_backbone=False)
+        self._model = _build_swin_fasterrcnn(
+            backbone_name=backbone_name, pretrained_backbone=False, imgsz=imgsz
+        )
         checkpoint = torch.load(str(weights_path), map_location=self._device, weights_only=False)
         self._model.load_state_dict(checkpoint["model_state_dict"])
         logger.info("Loaded weights from model.json: %s", weights_path)
