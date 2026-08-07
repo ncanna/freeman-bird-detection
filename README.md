@@ -1,6 +1,6 @@
 # Freeman Bird Detection: HLW Detector
 
-A framework for running and comparing bird detection experiments on camera trap footage. Supports multiple detection models through a unified adapter interface, with experiment tracking, artifact management, hyperparameter optimization (Optuna), and visualization.
+A framework for running and comparing bird detection experiments on camera trap footage. Supports multiple detection models (YOLO, RT-DETR, Swin Transformer + Faster R-CNN, DETR) through a unified adapter interface, with experiment tracking, artifact management, hyperparameter optimization (Optuna), and visualization.
 
 ## Repository Structure
 
@@ -13,6 +13,8 @@ freeman-bird-detection/
 ├── utilities/            # Data preparation and annotation conversion tools
 ├── notebooks/            # Dataset prep and tutorial notebooks
 ├── docs/                 # Architecture diagrams (PlantUML)
+├── archive/              # Legacy code — not part of the active framework
+├── detr_detector/        # Vendored Facebook DETR research repo — reference only, not wired in
 ├── run_experiments.ipynb # Interactive experiment notebook
 ├── run_experiments.py    # Example experiment runner script
 └── run_hpo.py            # Example HPO runner script
@@ -40,6 +42,8 @@ The diagrams below are rendered automatically from the PlantUML sources in `docs
 ```bash
 pip install -r requirements.txt
 ```
+
+The DETR adapter requires `transformers>=5.0`; the v5 vision API is not backward compatible with the v4 tutorials that most DETR examples online are written against.
 
 2. Ensure you have the following inputs ready:
    - A COCO-format annotation JSON (e.g. `instances_merged.json`)
@@ -94,8 +98,8 @@ visualize_split: test
 
 **Key config fields:**
 - `config_name` — used for naming output directories
-- `model_name` — which adapter to use (`"yolo"` or `"rtdetr"`)
-- `model_weights` — weights filename or path (the adapter loads it unless resuming)
+- `model_name` — which adapter to use (`"yolo"`, `"rtdetr"`, `"swin"`, or `"detr"`)
+- `model_weights` — weights filename, path, or (for `detr`) a HuggingFace hub id such as `facebook/detr-resnet-50`. The adapter loads it unless resuming. This is **not** a path field, so it is never resolved or checked against the filesystem — that is what lets a hub id share the field with a local `.pt` file.
 - `hyperparameters` — model-specific training parameters passed through to the adapter (e.g. `epochs`, `imgsz`, `batch`, `device`)
 - `coco_json` — COCO-format annotation JSON for all frames
 - `split_json` — JSON defining the train/val/test video stems
@@ -114,11 +118,12 @@ All path fields (`coco_json`, `split_json`, `images_dir`, `output_dir`, `resume_
 
 ## Running Experiments
 
-Each experiment produces a timestamped output directory under `outputs/<config_name>_<timestamp>/` containing:
+Each experiment produces a timestamped output directory under `outputs/experiments/<config_name>_<timestamp>/` containing:
 - `config.json` — full experiment configuration
-- `model.json` — paths to best and last checkpoint weights
+- `model.json` — paths to best and last checkpoint weights (stored repo-relative for portability)
 - `metrics.json` — evaluation results
 - `detections.json` — per-frame inference results
+- `work/` — model-native training artifacts (YOLO: `train.txt`/`yolo.yaml`; PyTorch adapters: `runs/train/weights/{best,last}.pt`)
 - `visualizations/` — annotated output videos
 - `experiment.log` — full run log
 
@@ -154,7 +159,7 @@ To run evaluation, prediction, or visualization on a previously completed experi
 ```python
 from hlwdetector.runner import ExperimentRunner
 
-runner = ExperimentRunner.from_experiment_dir("outputs/yolo11_h23_20260312_233336")
+runner = ExperimentRunner.from_experiment_dir("outputs/experiments/yolo11_h23_20260312_233336")
 runner.evaluate()
 runner.predict()
 runner.visualize_predictions()
@@ -168,10 +173,17 @@ To continue training from a prior checkpoint, set both `resume_weights` and `res
 
 ```yaml
 resume_experiment_name: yolo11_h23_20260402_004059
-resume_weights: outputs/yolo11_h23_20260402_004059/work/runs/yolo11_h23_train/weights/last.pt
+resume_weights: outputs/experiments/yolo11_h23_20260402_004059/work/runs/yolo11_h23_train/weights/last.pt
 ```
 
-Both fields must be set together or left unset.
+Both fields must be set together or left unset. Note the two hold different kinds of value:
+`resume_experiment_name` is a directory *name* under `<output_dir>/experiments/` (not a path, and
+deliberately not resolved), while `resume_weights` is a real path.
+
+For the PyTorch adapters (`swin`, `detr`), `epochs` is an **absolute** target, not a count of
+additional epochs — checkpoints store epochs *completed* and the loop runs `range(start_epoch, epochs)`.
+Resuming a 3-epoch checkpoint with `epochs: 3` would train nothing, so the adapter raises instead of
+silently doing no work.
 
 ### Running Multiple Experiments
 
@@ -190,7 +202,9 @@ See `run_experiments.py` for a runnable version of this with per-config timing.
 
 ## Hyperparameter Optimization
 
-`HPOptimizer` runs an [Optuna](https://optuna.org/) study over a search space, spawning one full `ExperimentRunner` per trial. Every trial trains, evaluates, and records its result; the metric returned to Optuna is the config field you choose via `metric`. Poorly performing trials can be stopped early through Optuna pruners, which read the per-epoch metrics reported by the model adapter (pruning is currently wired for the YOLO adapter).
+`HPOptimizer` runs an [Optuna](https://optuna.org/) study over a search space, spawning one full `ExperimentRunner` per trial. Every trial trains, evaluates, and records its result; the metric returned to Optuna is the config field you choose via `metric`. Poorly performing trials can be stopped early through Optuna pruners, which read the per-epoch metrics reported by the model adapter.
+
+> **Pruning currently works only with the YOLO adapter.** The per-epoch metric keys Optuna looks for are hardcoded Ultralytics strings, so a study configured with a pruner on any other adapter runs to completion without pruning — silently, with no error.
 
 Define a study config in `configs/hpo/` (all paths resolve relative to the repo root):
 
@@ -296,13 +310,62 @@ class BaseModelAdapter(ABC):
 
 `evaluate()` returns a `MetricsDict` (precision, recall, f1, mAP50, mAP50-95, optional accuracy); `predict()` returns a `DetectionResult`, a `dict[str, sv.Detections]` keyed by frame stem. Adapters are registered with `@register_adapter(name)` and resolved by `model_name` from the config.
 
+Two contracts every adapter must honour:
+
+- **`predict()` boxes are in native image pixel coordinates**, `xyxy`. If a model runs at a resized `imgsz`, the adapter must map predictions back before returning — `VisualizationPipeline` draws them onto the full-resolution frame, and `detections.json` would otherwise be in a different coordinate space than the ground truth.
+- **Emit a key for every frame**, using `sv.Detections.empty()` where there are no boxes, and always populate `confidence` and `class_id`. `ArtifactManager.save_detections` serializes exactly those three attributes.
+
 **`yolo_adapter.py`** — `@register_adapter("yolo")`
 
-Wraps Ultralytics YOLO models (YOLO11, YOLO26, etc.). `prepare_data()` converts COCO annotations to YOLO format and writes a `yolo.yaml` dataset config. `train()` runs Ultralytics training with hyperparameters from the config.
+Wraps Ultralytics YOLO models (YOLO11, YOLO26, etc.). `prepare_data()` converts COCO annotations to YOLO format and writes a `yolo.yaml` dataset config. `train()` runs Ultralytics training with hyperparameters from the config; the whole `hyperparameters` dict is splatted into `model.train()`, so any Ultralytics-valid key (`lr0`, `optimizer`, augmentation knobs) passes straight through. Metrics come from Ultralytics' own `results.box`.
 
 **`rtdetr_adapter.py`** — `@register_adapter("rtdetr")`
 
 Wraps Ultralytics RT-DETR models. Same interface as the YOLO adapter.
+
+**`swin_adapter.py`** — `@register_adapter("swin")`
+
+Swin Transformer backbone (timm) + FPN + torchvision Faster R-CNN head, with a hand-rolled training loop. Three conventions are load-bearing:
+
+- **Resize/normalize belong to the model, not `prepare_data`.** The dataset returns native-resolution images and native COCO boxes; Faster R-CNN's `GeneralizedRCNNTransform` rescales GT boxes in lockstep with the image and un-scales predictions on the way out.
+- **Swin emits NHWC; FPN requires NCHW** — the backbone wrapper permutes per stage.
+- **`strict_img_size=False` is required**, since `swin_*_224` otherwise asserts a 224px input while the detection transform emits variable, non-square batches.
+
+`imgsz` is the **short side** (torchvision's `min_size`), not a square. Keep it at 640: h23 birds have a median √area of ~56px, which lands near the smallest anchor (32px) after resize; shrinking to 224 drops them below every anchor and starves the RPN of positive targets.
+
+**`detr_adapter.py`** — `@register_adapter("detr")`
+
+DETR-family detection via HuggingFace Transformers (requires `transformers>=5.0`). **Checkpoint-driven**: `model_weights` names any HF object-detection checkpoint and `AutoModelForObjectDetection` / `AutoImageProcessor` select the classes, so switching variants is a YAML edit rather than a new adapter:
+
+```yaml
+model_name: detr
+model_weights: facebook/detr-resnet-50   # or SenseTime/deformable-detr,
+                                         # microsoft/conditional-detr-resnet-50, ...
+```
+
+Three conventions are load-bearing:
+
+- **Resize/normalize belong to the image processor, not `prepare_data`** — same reasoning as swin. `post_process_object_detection(target_sizes=...)` maps predictions back to native coordinates.
+- **`imgsz` is the short side, not a square.** `imgsz: 640` on 1280x720 footage means a 640x1138 input; the long side defaults to `imgsz * 16/9` and is overridable via `max_size`.
+- **COCO `category_id` is remapped to a contiguous 0-based class index.** HF DETR reserves the *last* logit for "no object", so with `num_labels=1` the only valid class label is `0`; feeding a raw `category_id: 1` would train every box as background with no error raised. Do not add a background class manually (unlike torchvision's Faster R-CNN, which reserves index 0 for it).
+
+Training uses two parameter groups — the pretrained CNN backbone at `lr_backbone` (default 1e-5) and the transformer/heads at `lr` (default 1e-4) — runs a validation pass every epoch, and selects `best.pt` on val mAP50-95.
+
+> **DETR converges slowly.** The original paper trains for 300–500 epochs. At 2 epochs on h23 the peak prediction confidence is ~0.0025, so the default `score_threshold: 0.5` produces an empty `detections.json` and a video with no prediction boxes — that is under-training, not a failure. Use a long schedule, or switch to `SenseTime/deformable-detr`, which converges considerably faster and handles small objects better.
+
+### `metrics.py` — Shared COCO Evaluation
+
+`compute_coco_metrics(split_view, detections, max_dets=100)` is the single scoring path for the adapters that do not get metrics from their training framework (`swin` and `detr`; YOLO and RT-DETR use Ultralytics' numbers). It builds ground truth in memory from the `SplitView` — a split is a *subset* of `coco_json`, so scoring against the file on disk would count every other split's images as missed detections — and runs `pycocotools` `COCOeval`.
+
+- `map50_95` = AP@[.50:.95], `map50` = AP@0.50
+- `precision`/`recall`/`f1` = the best-F1 point on the IoU=0.50 PR curve, matching Ultralytics' `box.mp`/`box.mr` semantics so numbers stay comparable across adapters
+- `raw` carries all 12 COCO summary statistics. On h23, birds (median √area ~56px) fall in COCO's **medium** bucket, so `APm` is the band to watch — `APs` reports `-1` because the dataset has no small objects by COCO's definition.
+
+Adapters collect detections for metrics at `eval_score_threshold` (default `0.001`), which is deliberately separate from the `score_threshold` (default `0.5`) used for `predict()` and visualization. AP is the area under the full PR curve, so pre-filtering at 0.5 truncates it and understates AP.
+
+### `results.py` — Shared Result Types
+
+`MetricsDict`, `TrainingResult`, and `DetectionResult` live here rather than in `adapters/base.py` so that modules below the adapter layer (notably `metrics.py`) can build them without importing the adapters package back — importing `adapters.base` executes `adapters/__init__.py`, which imports every adapter, which imports `metrics`. `adapters/base.py` re-exports all three, so `from hlwdetector.adapters.base import MetricsDict` continues to work and yields the same object.
 
 ### `dataset_manager.py` — Dataset Loading
 
@@ -348,8 +411,8 @@ Holds the `model_name → adapter class` registry. `@register_adapter(name)` reg
   from hlwdetector.visualization import MetricsComparator
 
   comparator = MetricsComparator.from_experiment_dirs([
-      "outputs/yolo11_h23_20260430_031019",
-      "outputs/rtdetr_h23_20260430_032431",
+      "outputs/experiments/yolo11_h23_20260430_031019",
+      "outputs/experiments/rtdetr_h23_20260430_032431",
   ])
   print(comparator.to_dataframe())
   comparator.to_csv("comparison.csv")
@@ -400,5 +463,8 @@ converter.coco_to_yolo(
        def evaluate(self, config): ...
        def predict(self, config): ...
    ```
-3. Import the adapter in `hlwdetector/adapters/__init__.py` to trigger registration
+3. Import the adapter in `hlwdetector/adapters/__init__.py` to trigger registration — **without this the adapter is invisible** and `config.validate()` fails with a `KeyError`
 4. Set `model_name: my_model` in a config YAML
+5. Add a config under `configs/experiment/`, and document every hyperparameter key your adapter reads in its class docstring
+
+For a PyTorch-native model, `swin_adapter.py` and `detr_adapter.py` are the closest templates: both hand-roll their training loop, save `{best,last}.pt` under `work/runs/train/weights/`, restore optimizer/scheduler/epoch on resume, and score through `compute_coco_metrics`. Reuse `resolve_device()` from `adapters/base.py` rather than reimplementing device-string parsing.

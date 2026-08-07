@@ -31,12 +31,14 @@ from hlwdetector.adapters.base import (
     DetectionResult,
     MetricsDict,
     TrainingResult,
+    resolve_device,
 )
+from hlwdetector.metrics import EVAL_SCORE_THRESHOLD, category_ids, compute_coco_metrics
 from hlwdetector.registry import register_adapter
 
 if TYPE_CHECKING:
     from hlwdetector.config import ExperimentConfig
-    from hlwdetector.dataset_manager import DatasetManager
+    from hlwdetector.dataset_manager import DatasetManager, SplitView
 
 logger = logging.getLogger(__name__)
 
@@ -199,18 +201,9 @@ def _collate_fn(batch):
 # ====================================================================== #
 
 
-def _resolve_device(device_str: str | None) -> torch.device:
-    """Parse device config string into a torch.device."""
-    if device_str is None or device_str == "auto":
-        if torch.cuda.is_available():
-            return torch.device("cuda")
-        elif torch.backends.mps.is_available():
-            return torch.device("mps")
-        return torch.device("cpu")
-    # Handle "0", "1" → "cuda:0", "cuda:1"
-    if device_str.isdigit():
-        return torch.device(f"cuda:{device_str}")
-    return torch.device(device_str)
+# Lives in adapters.base so the detr adapter can share it; kept under the old
+# private name here so the rest of this module reads unchanged.
+_resolve_device = resolve_device
 
 
 # ====================================================================== #
@@ -232,7 +225,9 @@ class SwinAdapter(BaseModelAdapter):
         weight_decay:   AdamW weight decay (default 0.05)
         lr_step_size:   StepLR step size in epochs (default 20)
         lr_gamma:       StepLR decay factor (default 0.1)
-        score_threshold: min confidence for predictions (default 0.5)
+        score_threshold: min confidence for predict()/visualization (default 0.5)
+        eval_score_threshold: min confidence for metrics (default 0.001 — keep low,
+                        a high value truncates the PR curve and understates AP)
 
     Internal state is preserved across sequential calls:
         prepare_data → train → evaluate → predict
@@ -246,6 +241,7 @@ class SwinAdapter(BaseModelAdapter):
         self._val_dataset: _COCODetectionDataset | None = None
         self._test_dataset: _COCODetectionDataset | None = None
         self._test_images: list[dict] | None = None
+        self._val_split: "SplitView | None" = None
         self._training_result: TrainingResult | None = None
         self._transform: Callable | None = None
 
@@ -287,6 +283,7 @@ class SwinAdapter(BaseModelAdapter):
                 self._train_dataset = dataset
             elif split_name == "val":
                 self._val_dataset = dataset
+                self._val_split = split_view  # ground truth for COCOeval
             else:
                 self._test_dataset = dataset
                 self._test_images = split_view.images
@@ -479,12 +476,14 @@ class SwinAdapter(BaseModelAdapter):
     # ------------------------------------------------------------------ #
 
     def evaluate(self, config: "ExperimentConfig") -> MetricsDict:
-        """Evaluate on val split using COCO-style AP metrics."""
+        """Evaluate on val split with pycocotools COCOeval."""
         if self._model is None:
             self._load_model_from_artifacts(config)
 
         hp = config.hyperparameters
-        score_threshold = hp.get("score_threshold", 0.5)
+        # Metrics use their own low threshold, not the visualization one: AP is the
+        # area under the full PR curve, and pre-filtering at 0.5 truncates it.
+        threshold = hp.get("eval_score_threshold", EVAL_SCORE_THRESHOLD)
         batch = hp.get("batch", 8)
 
         self._model.to(self._device)
@@ -499,9 +498,8 @@ class SwinAdapter(BaseModelAdapter):
             pin_memory=(self._device.type == "cuda"),
         )
 
-        all_pred_boxes = []
-        all_pred_scores = []
-        all_gt_boxes = []
+        cat_ids = category_ids(self._val_split)
+        detections: list[dict] = []
 
         with torch.inference_mode():
             for images, targets in val_loader:
@@ -509,35 +507,26 @@ class SwinAdapter(BaseModelAdapter):
                 outputs = self._model(images)
 
                 for output, target in zip(outputs, targets):
-                    # Filter by score threshold
-                    keep = output["scores"] >= score_threshold
-                    pred_boxes = output["boxes"][keep].cpu().numpy()
-                    pred_scores = output["scores"][keep].cpu().numpy()
-                    gt_boxes = target["boxes"].cpu().numpy()
+                    image_id = int(target["image_id"].item())
+                    keep = output["scores"] >= threshold
+                    boxes = output["boxes"][keep].cpu().numpy()
+                    scores = output["scores"][keep].cpu().numpy()
+                    labels = output["labels"][keep].cpu().numpy().astype(int)
 
-                    all_pred_boxes.append(pred_boxes)
-                    all_pred_scores.append(pred_scores)
-                    all_gt_boxes.append(gt_boxes)
+                    for (x1, y1, x2, y2), score, label in zip(boxes, scores, labels):
+                        detections.append(
+                            {
+                                "image_id": image_id,
+                                # torchvision labels are 1-based with 0 = background.
+                                "category_id": cat_ids[label - 1],
+                                "bbox": [
+                                    float(x1), float(y1), float(x2 - x1), float(y2 - y1)
+                                ],
+                                "score": float(score),
+                            }
+                        )
 
-        # Compute metrics using IoU-based matching
-        precision, recall, map50, map50_95 = self._compute_coco_metrics(
-            all_pred_boxes, all_pred_scores, all_gt_boxes
-        )
-        f1 = (2 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0.0
-
-        return MetricsDict(
-            precision=precision,
-            recall=recall,
-            f1=f1,
-            map50=map50,
-            map50_95=map50_95,
-            raw={
-                "map50": map50,
-                "map50_95": map50_95,
-                "precision": precision,
-                "recall": recall,
-            },
-        )
+        return compute_coco_metrics(self._val_split, detections)
 
     # ------------------------------------------------------------------ #
     # predict
@@ -598,135 +587,6 @@ class SwinAdapter(BaseModelAdapter):
     # ------------------------------------------------------------------ #
     # Internal helpers
     # ------------------------------------------------------------------ #
-
-    def _compute_coco_metrics(
-        self,
-        all_pred_boxes: list[np.ndarray],
-        all_pred_scores: list[np.ndarray],
-        all_gt_boxes: list[np.ndarray],
-    ) -> tuple[float, float, float, float]:
-        """Compute COCO-style AP metrics across all images.
-
-        Returns (precision, recall, mAP@50, mAP@50:95).
-        Uses pycocotools-style IoU matching at multiple thresholds.
-        """
-        iou_thresholds = np.arange(0.5, 1.0, 0.05)
-        aps_per_threshold = []
-
-        for iou_thresh in iou_thresholds:
-            tp_total = 0
-            fp_total = 0
-            fn_total = 0
-
-            for pred_boxes, pred_scores, gt_boxes in zip(
-                all_pred_boxes, all_pred_scores, all_gt_boxes
-            ):
-                if len(gt_boxes) == 0 and len(pred_boxes) == 0:
-                    continue
-                if len(gt_boxes) == 0:
-                    fp_total += len(pred_boxes)
-                    continue
-                if len(pred_boxes) == 0:
-                    fn_total += len(gt_boxes)
-                    continue
-
-                # Sort predictions by confidence (descending)
-                sorted_idx = np.argsort(-pred_scores)
-                pred_boxes = pred_boxes[sorted_idx]
-
-                # Compute IoU matrix
-                ious = self._compute_iou_matrix(pred_boxes, gt_boxes)
-
-                matched_gt = set()
-                tp = 0
-                fp = 0
-
-                for i in range(len(pred_boxes)):
-                    if ious.shape[1] > 0:
-                        best_gt_idx = np.argmax(ious[i])
-                        best_iou = ious[i, best_gt_idx]
-                    else:
-                        best_iou = 0.0
-                        best_gt_idx = -1
-
-                    if best_iou >= iou_thresh and best_gt_idx not in matched_gt:
-                        tp += 1
-                        matched_gt.add(best_gt_idx)
-                    else:
-                        fp += 1
-
-                fn = len(gt_boxes) - len(matched_gt)
-                tp_total += tp
-                fp_total += fp
-                fn_total += fn
-
-            # Compute precision/recall at this threshold
-            if tp_total + fp_total > 0:
-                p = tp_total / (tp_total + fp_total)
-            else:
-                p = 0.0
-            if tp_total + fn_total > 0:
-                r = tp_total / (tp_total + fn_total)
-            else:
-                r = 0.0
-
-            aps_per_threshold.append(p * r / max(p + r, 1e-6) * 2)  # F1 as proxy AP
-
-        # mAP@50 is the first threshold (IoU=0.5)
-        # For proper AP, use precision at IoU=0.5 threshold
-        # Recompute precision/recall specifically at IoU=0.5
-        tp_50 = 0
-        fp_50 = 0
-        fn_50 = 0
-        for pred_boxes, pred_scores, gt_boxes in zip(
-            all_pred_boxes, all_pred_scores, all_gt_boxes
-        ):
-            if len(gt_boxes) == 0 and len(pred_boxes) == 0:
-                continue
-            if len(gt_boxes) == 0:
-                fp_50 += len(pred_boxes)
-                continue
-            if len(pred_boxes) == 0:
-                fn_50 += len(gt_boxes)
-                continue
-
-            sorted_idx = np.argsort(-pred_scores)
-            pred_boxes = pred_boxes[sorted_idx]
-            ious = self._compute_iou_matrix(pred_boxes, gt_boxes)
-            matched_gt = set()
-
-            for i in range(len(pred_boxes)):
-                best_gt_idx = np.argmax(ious[i])
-                best_iou = ious[i, best_gt_idx]
-                if best_iou >= 0.5 and best_gt_idx not in matched_gt:
-                    tp_50 += 1
-                    matched_gt.add(best_gt_idx)
-                else:
-                    fp_50 += 1
-            fn_50 += len(gt_boxes) - len(matched_gt)
-
-        precision = tp_50 / (tp_50 + fp_50) if (tp_50 + fp_50) > 0 else 0.0
-        recall = tp_50 / (tp_50 + fn_50) if (tp_50 + fn_50) > 0 else 0.0
-        map50 = precision  # AP at IoU=0.5 (single-class approximation)
-        map50_95 = float(np.mean(aps_per_threshold)) if aps_per_threshold else 0.0
-
-        return precision, recall, map50, map50_95
-
-    @staticmethod
-    def _compute_iou_matrix(boxes_a: np.ndarray, boxes_b: np.ndarray) -> np.ndarray:
-        """Compute IoU between two sets of boxes. Shape: (N, M)."""
-        x1 = np.maximum(boxes_a[:, 0:1], boxes_b[:, 0:1].T)
-        y1 = np.maximum(boxes_a[:, 1:2], boxes_b[:, 1:2].T)
-        x2 = np.minimum(boxes_a[:, 2:3], boxes_b[:, 2:3].T)
-        y2 = np.minimum(boxes_a[:, 3:4], boxes_b[:, 3:4].T)
-
-        intersection = np.maximum(0, x2 - x1) * np.maximum(0, y2 - y1)
-
-        area_a = (boxes_a[:, 2] - boxes_a[:, 0]) * (boxes_a[:, 3] - boxes_a[:, 1])
-        area_b = (boxes_b[:, 2] - boxes_b[:, 0]) * (boxes_b[:, 3] - boxes_b[:, 1])
-
-        union = area_a[:, None] + area_b[None, :] - intersection
-        return intersection / np.maximum(union, 1e-6)
 
     def _load_model_from_artifacts(self, config: "ExperimentConfig") -> None:
         """Load weights for evaluate/predict without a prior train() call."""

@@ -7,6 +7,9 @@ title hlwdetector — Class Diagram
 
 ' ─────────────────────────────────────────────
 ' DATA / VALUE OBJECTS
+' TrainingResult / MetricsDict / DetectionResult live in
+' hlwdetector/results.py — below the adapter layer, so that
+' metrics.py can build them without an import cycle.
 ' ─────────────────────────────────────────────
 package "Data Objects" {
 
@@ -17,14 +20,18 @@ package "Data Objects" {
     + coco_json : str
     + images_dir : str
     + split_json : str
+    + model_weights : str | None
     + output_dir : str
     + random_seed : int
     + wandb_project : str | None
-    + resume_experiment : str | None
-    + resume_from : str | None
+    + wandb_group : str | None
+    + resume_experiment_name : str | None
+    + resume_weights : str | None
     + visualize_split : str
     + visualization_fps : float
     + {static} PATH_FIELDS : tuple[str, ...]
+    --
+    + resume_experiment_dir : Path | None  <<property>>
     --
     + {static} from_yaml(path: str) : ExperimentConfig
     + to_serializable_dict() : dict[str, Any]
@@ -108,6 +115,13 @@ package "Core Infrastructure" {
     + {static} resolve(path: str | Path) : Path
   }
 
+  class metrics <<module>> $infra {
+    + {static} EVAL_SCORE_THRESHOLD : float = 0.001
+    --
+    + {static} category_ids(split_view) : list[int]
+    + {static} compute_coco_metrics(split_view, detections, max_dets) : MetricsDict
+  }
+
   class DatasetManager $infra {
     - _config : ExperimentConfig
     - _split_views : dict[str, SplitView]
@@ -165,6 +179,9 @@ package "Model Adapters" {
     + {abstract} train(config: ExperimentConfig) : TrainingResult
     + {abstract} evaluate(config: ExperimentConfig) : MetricsDict
     + {abstract} predict(config: ExperimentConfig) : DetectionResult
+    --
+    ' module-level helper in adapters/base.py
+    + {static} resolve_device(device_str: str | None) : torch.device
   }
 
   class YOLOAdapter <<@register_adapter("yolo")>> $adapter {
@@ -189,8 +206,49 @@ package "Model Adapters" {
     + predict(config: ExperimentConfig) : DetectionResult
   }
 
+  class SwinAdapter <<@register_adapter("swin")>> $adapter {
+    - _model : FasterRCNN | None
+    - _device : torch.device | None
+    - _train_dataset : Dataset | None
+    - _val_dataset : Dataset | None
+    - _test_dataset : Dataset | None
+    - _val_split : SplitView | None
+    - _training_result : TrainingResult | None
+    --
+    + prepare_data(dataset_manager, config) : None
+    + train(config: ExperimentConfig) : TrainingResult
+    + evaluate(config: ExperimentConfig) : MetricsDict
+    + predict(config: ExperimentConfig) : DetectionResult
+    - _load_model_from_artifacts(config) : None
+  }
+
+  class DETRAdapter <<@register_adapter("detr")>> $adapter {
+    - _model : PreTrainedModel | None
+    - _processor : AutoImageProcessor | None
+    - _collator : _DETRCollator | None
+    - _device : torch.device | None
+    - _train_dataset : Dataset | None
+    - _val_dataset : Dataset | None
+    - _test_dataset : Dataset | None
+    - _val_split : SplitView | None
+    - _cat_id_to_class_idx : dict[int, int] | None
+    - _id2label : dict[int, str] | None
+    - _training_result : TrainingResult | None
+    --
+    + prepare_data(dataset_manager, config) : None
+    + train(config: ExperimentConfig) : TrainingResult
+    + evaluate(config: ExperimentConfig) : MetricsDict
+    + predict(config: ExperimentConfig) : DetectionResult
+    - _ensure_processor(config) : None
+    - _ensure_datasets(config) : None
+    - _run_validation(config) : MetricsDict
+    - _load_model_from_artifacts(config) : None
+  }
+
   BaseModelAdapter <|-- YOLOAdapter
   BaseModelAdapter <|-- RTDETRAdapter
+  BaseModelAdapter <|-- SwinAdapter
+  BaseModelAdapter <|-- DETRAdapter
 }
 
 ' ─────────────────────────────────────────────
@@ -287,12 +345,25 @@ ExperimentConfig ..> paths : serialize / resolve\npath fields
 ArtifactManager ..> paths : repo-rel weights\n& resume paths
 YOLOAdapter ..> paths : resolve best.pt
 RTDETRAdapter ..> paths : resolve best.pt
+SwinAdapter ..> paths : resolve best.pt
+DETRAdapter ..> paths : resolve best.pt
 
 ' Adapter dependencies
 BaseModelAdapter --> ExperimentTracker : logs via
 BaseModelAdapter ..> TrainingResult : returns
 BaseModelAdapter ..> MetricsDict : returns
 BaseModelAdapter ..> DatasetManager : prepare_data()
+
+' Shared COCOeval scoring — only the adapters whose training
+' framework does not report metrics of its own.
+SwinAdapter ..> metrics : compute_coco_metrics()
+DETRAdapter ..> metrics : compute_coco_metrics()
+metrics ..> SplitView : builds COCO GT from
+metrics ..> MetricsDict : returns
+
+' The detr adapter rebuilds its own datasets because
+' ExperimentRunner.train() skips prepare_data when resuming.
+DETRAdapter ..> DatasetManager : _ensure_datasets()
 
 ' Visualization dependencies
 ExperimentRunner ..> VisualizationPipeline : creates
@@ -304,6 +375,17 @@ note as N1
   **DetectionResult** = dict[str, sv.Detections]
   Key: frame stem (filename without extension)
   Value: supervision Detections object
+  Boxes are xyxy in **native image pixels**.
+end note
+
+note as N2
+  **Metrics sources differ by adapter.**
+  YOLO / RT-DETR read Ultralytics' own
+  results.box. Swin / DETR score through
+  metrics.compute_coco_metrics (pycocotools
+  COCOeval), using eval_score_threshold
+  (0.001) rather than score_threshold (0.5)
+  so the PR curve is not truncated.
 end note
 
 @enduml

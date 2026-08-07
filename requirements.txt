@@ -19,6 +19,6 @@ timm
 torch
 torchvision
 tqdm
-transformers
+transformers>=5.0  # DETR adapter uses the v5 image-processor / Auto* vision API
 ultralytics
 wandb

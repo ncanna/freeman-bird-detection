@@ -1,0 +1,26 @@
+config_name: detr_h23
+model_name: detr
+model_weights: facebook/detr-resnet-50
+hyperparameters:
+  epochs: 3
+  imgsz: 640            # short side; long side defaults to imgsz * 16/9
+  batch: 4
+  device: "0"
+  lr: 0.0001            # transformer + heads
+  lr_backbone: 0.00001  # pretrained CNN backbone
+  weight_decay: 0.0001
+  lr_step_size: 40
+  lr_gamma: 0.1
+  clip_max_norm: 0.1
+  score_threshold: 0.5      # predict() / visualization
+  eval_score_threshold: 0.001  # metrics; keep low or AP is understated
+coco_json: data/h23/instances_subset.json
+split_json: data/h23/split_h23_subset.json
+images_dir: data/h23/images
+output_dir: outputs
+wandb_project: bird-detection
+# Resume training. Both fields are required together; their presence IS the resume
+# flag. 'epochs' above is the absolute total, so raise it above the epochs the
+# checkpoint already completed.
+# resume_experiment_name: detr_h23_20260807_120000
+# resume_weights: outputs/experiments/detr_h23_20260807_120000/work/runs/train/weights/last.pt

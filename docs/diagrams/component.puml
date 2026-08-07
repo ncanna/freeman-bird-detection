@@ -44,6 +44,20 @@ package "hlwdetector (Core)" {
         interface "BaseModelAdapter" as BMA
         [YOLOAdapter] <<adapter>> $adapter
         [RTDETRAdapter] <<adapter>> $adapter
+        [SwinAdapter] <<adapter>> $adapter
+        [DETRAdapter] <<adapter>> $adapter
+    }
+
+    package "Results & Scoring" $subpkg {
+        [results\n(MetricsDict, TrainingResult,\nDetectionResult)] <<module>> $data
+        [metrics\ncompute_coco_metrics] <<module>> $infra
+        note right of [metrics\ncompute_coco_metrics]
+          Shared COCOeval scoring for
+          adapters whose framework does
+          not report metrics itself
+          (swin, detr). Builds GT in
+          memory from the SplitView.
+        end note
     }
 
     package "Visualization" $subpkg {
@@ -57,12 +71,23 @@ package "hlwdetector (Core)" {
 '─────────────────────────────────────────────────────────
 package "External Libraries" {
     [ultralytics] <<library>> $ext
+    [transformers\n(>=5.0)] <<library>> $ext
+    [timm] <<library>> $ext
     [supervision] <<library>> $ext
     [pycocotools\nCOCOeval] <<library>> $ext
     [wandb] <<library>> $ext
     [opencv-python] <<library>> $ext
     [torch / torchvision] <<library>> $ext
     [optuna] <<library>> $ext
+
+    ' Pretrained weight sources, downloaded on first use. Kept inside this
+    ' package so the edges to their client libraries stay short.
+    cloud "Ultralytics\nModel Zoo" as UltraHub $ext
+    cloud "HuggingFace\nHub" as HFHub $ext
+
+    UltraHub ..> [ultralytics]           : YOLO / RT-DETR weights
+    HFHub    ..> [transformers\n(>=5.0)] : DETR checkpoints
+    HFHub    ..> [timm]                  : Swin backbone weights
 }
 
 '─────────────────────────────────────────────────────────
@@ -70,9 +95,9 @@ package "External Libraries" {
 '─────────────────────────────────────────────────────────
 package "File System" {
     database "COCO JSON\n(instances_merged.json)" as CocoJSON
-    database "Split JSON\n(split_h23.json)" as SplitJSON
+    database "Split JSON\n(split.json)" as SplitJSON
     database "Images Dir\n(data/h23/images/)" as ImagesDir
-    database "Outputs Dir\n(outputs/run/)" as OutputsDir
+    database "Outputs Dir\n(outputs/experiments/<run>/)" as OutputsDir
     database "Config YAML\n(configs/*.yaml)" as ConfigYAML
 }
 
@@ -96,13 +121,21 @@ package "File System" {
 [AdapterRegistry] --> BMA                : registered via @register_adapter
 BMA <|.. [YOLOAdapter]
 BMA <|.. [RTDETRAdapter]
+BMA <|.. [SwinAdapter]
+BMA <|.. [DETRAdapter]
 
 '─────────────────────────────────────────────────────────
 ' Adapter → library bindings
 '─────────────────────────────────────────────────────────
 [YOLOAdapter]          --> [ultralytics]
 [RTDETRAdapter]        --> [ultralytics]
+[SwinAdapter]          --> [timm]                 : Swin backbone
+[SwinAdapter]          --> [torch / torchvision]  : FPN + Faster R-CNN head
+[DETRAdapter]          --> [transformers\n(>=5.0)] : AutoModelForObjectDetection\nAutoImageProcessor
+[DETRAdapter]          --> [torch / torchvision]  : hand-rolled training loop
 [ultralytics]          --> [torch / torchvision]
+[transformers\n(>=5.0)] --> [torch / torchvision]
+[timm]                 --> [torch / torchvision]
 
 '─────────────────────────────────────────────────────────
 ' Data flow
@@ -122,12 +155,22 @@ BMA <|.. [RTDETRAdapter]
 [ArtifactManager]    ..> [paths\n(repo-root anchoring)] : store repo-rel weights & resume paths
 [YOLOAdapter]        ..> [paths\n(repo-root anchoring)] : resolve best.pt at runtime
 [RTDETRAdapter]      ..> [paths\n(repo-root anchoring)] : resolve best.pt at runtime
+[SwinAdapter]        ..> [paths\n(repo-root anchoring)] : resolve best.pt at runtime
+[DETRAdapter]        ..> [paths\n(repo-root anchoring)] : resolve best.pt at runtime
 
 '─────────────────────────────────────────────────────────
 ' Evaluation & prediction
+' Ultralytics adapters read metrics off results.box; the
+' PyTorch-native adapters score through the metrics module.
 '─────────────────────────────────────────────────────────
-[YOLOAdapter]       --> [pycocotools\nCOCOeval] : evaluate()
-[RTDETRAdapter]     --> [pycocotools\nCOCOeval] : evaluate()
+[YOLOAdapter]       --> [ultralytics]                  : evaluate() reads results.box
+[RTDETRAdapter]     --> [ultralytics]                  : evaluate() reads results.box
+[SwinAdapter]       --> [metrics\ncompute_coco_metrics] : evaluate()
+[DETRAdapter]       --> [metrics\ncompute_coco_metrics] : evaluate() + per-epoch val
+[metrics\ncompute_coco_metrics] --> [pycocotools\nCOCOeval] : AP@[.50:.95], AP@50
+[metrics\ncompute_coco_metrics] --> [results\n(MetricsDict, TrainingResult,\nDetectionResult)] : builds MetricsDict
+[metrics\ncompute_coco_metrics] <.. [DatasetManager]   : SplitView supplies GT
+BMA                 ..> [results\n(MetricsDict, TrainingResult,\nDetectionResult)] : returns
 BMA                 --> [supervision]           : sv.Detections (predict)
 
 '─────────────────────────────────────────────────────────

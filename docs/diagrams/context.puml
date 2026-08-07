@@ -18,15 +18,17 @@ UpdateRelStyle($arrowText, $arrowLine)
 
 Person(researcher, "ML Researcher", "Bird Lab researcher who configures, runs, and reviews detection experiments")
 
-System(hlwdetector, "hlwdetector", "ML experimentation framework that trains, tunes (Optuna HPO), evaluates, and visualizes bird-detection models on camera-trap footage")
+System(hlwdetector, "hlwdetector", "ML experimentation framework that trains, tunes (Optuna HPO), evaluates, and visualizes bird-detection models (YOLO, RT-DETR, Swin+Faster R-CNN, DETR) on camera-trap footage")
 
 System_Ext(wandb, "Weights & Biases", "SaaS experiment tracking — metrics, artifacts, and video logging (optional)")
 System_Ext(ultralytics, "Ultralytics Model Zoo", "Source of pretrained YOLO / RT-DETR weights downloaded on first use")
+System_Ext(hfhub, "HuggingFace Hub", "Source of pretrained DETR-family checkpoints (transformers) and Swin backbones (timm)")
 System_Ext(dataset_src, "Camera-Trap Data Source", "Freeman-site videos + COCO annotations downloaded for training/eval")
 
 Rel(researcher, hlwdetector, "Runs experiments & HPO studies, reviews metrics & annotated videos", "CLI / Python API")
 Rel(hlwdetector, wandb, "Logs metrics, artifacts, videos", "HTTPS")
-Rel(hlwdetector, ultralytics, "Downloads pretrained weights", "HTTPS")
+Rel(hlwdetector, ultralytics, "Downloads pretrained YOLO / RT-DETR weights", "HTTPS")
+Rel(hlwdetector, hfhub, "Downloads DETR checkpoints & Swin backbones", "HTTPS")
 Rel(dataset_src, hlwdetector, "Provides COCO datasets & frames", "Files on disk")
 
 SHOW_LEGEND()
