@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import shutil
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -27,6 +28,7 @@ from torchvision.ops.feature_pyramid_network import FeaturePyramidNetwork, LastL
 
 from hlwdetector import paths
 from hlwdetector.adapters.base import (
+    TORCH_EPOCH_METRIC_KEYS,
     BaseModelAdapter,
     DetectionResult,
     MetricsDict,
@@ -233,6 +235,10 @@ class SwinAdapter(BaseModelAdapter):
         prepare_data → train → evaluate → predict
     """
 
+    # train() validates every epoch and reports the result under these keys.
+    supports_pruning = True
+    EPOCH_METRIC_KEYS = TORCH_EPOCH_METRIC_KEYS
+
     def __init__(self, artifact_manager, tracker) -> None:
         super().__init__(artifact_manager, tracker)
         self._model: FasterRCNN | None = None
@@ -301,8 +307,9 @@ class SwinAdapter(BaseModelAdapter):
 
     def train(self, config: "ExperimentConfig") -> TrainingResult:
         """Fine-tune Swin + Faster R-CNN and return TrainingResult."""
-        if self._train_dataset is None and config.resume_weights is None:
-            raise RuntimeError("Call prepare_data() before train().")
+        # The per-epoch validation pass needs the val split, which a resumed run
+        # never prepared: ExperimentRunner.train() skips prepare_data in that case.
+        self._ensure_datasets(config)
 
         hp = config.hyperparameters
         backbone_name = hp.get("backbone", "swin_tiny_patch4_window7_224")
@@ -380,8 +387,23 @@ class SwinAdapter(BaseModelAdapter):
         weights_dir = run_dir / "weights"
         weights_dir.mkdir(parents=True, exist_ok=True)
 
-        best_loss = float("inf")
+        # Carry the best score across the resume boundary: a resumed run is a
+        # continuation, so an epoch is only "best" if it beats the whole history.
+        # The resumed checkpoint seeds best.pt so best_weights_path is populated
+        # even when no new epoch improves on it.
+        best_metric = -float("inf")
         best_epoch = -1
+        if config.resume_weights is not None:
+            best_metric = checkpoint.get("best_metric", -float("inf"))
+            if best_metric is None or not np.isfinite(best_metric):
+                best_metric = -float("inf")
+            else:
+                shutil.copy2(config.resume_weights, weights_dir / "best.pt")
+                logger.info(
+                    "Carrying best val mAP50-95=%.4f over from the resumed checkpoint",
+                    best_metric,
+                )
+        avg_loss = float("nan")
         current_lr = optimizer.param_groups[0]["lr"]  # defined even if the loop body never runs
 
         for epoch in range(start_epoch, epochs):
@@ -419,36 +441,56 @@ class SwinAdapter(BaseModelAdapter):
             for k, v in loss_dict.items():
                 epoch_metrics[f"train/{k}"] = v.item()
 
-            self.log_epoch(epoch + 1, epoch_metrics)
-            # Also push to W&B step tracking
+            # Validate every epoch: best.pt is selected on val mAP50-95, and this
+            # is the per-epoch metric stream the HPO pruner reads.
+            val_metrics = self._run_validation(config)
+            epoch_metrics.update(
+                {
+                    "val/precision": val_metrics.precision,
+                    "val/recall": val_metrics.recall,
+                    "val/f1": val_metrics.f1,
+                    "val/mAP50": val_metrics.map50,
+                    "val/mAP50_95": val_metrics.map50_95,
+                }
+            )
+
             if self._tracker is not None:
                 self._tracker.log_wandb_step(epoch_metrics, step=epoch + 1)
 
             logger.info(
-                "Epoch %d/%d — loss: %.4f, lr: %.6f",
+                "Epoch %d/%d — loss: %.4f, lr: %.6f, val mAP50-95: %.4f, val mAP50: %.4f",
                 epoch + 1, epochs, avg_loss, current_lr,
+                val_metrics.map50_95, val_metrics.map50,
             )
 
             # Save checkpoint
             checkpoint_data = {
-                "epoch": epoch + 1,
+                "epoch": epoch + 1,  # epochs COMPLETED
                 "model_state_dict": self._model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
                 "scheduler_state_dict": lr_scheduler.state_dict(),
                 "loss": avg_loss,
+                "best_metric": best_metric,
             }
 
             # Save last checkpoint every epoch
             last_path = weights_dir / "last.pt"
             torch.save(checkpoint_data, last_path)
 
-            # Save best checkpoint
-            if avg_loss < best_loss:
-                best_loss = avg_loss
+            # Save best checkpoint. Selection is on val mAP50-95, matching the detr
+            # adapter and Ultralytics' `fitness` (w=[0,0,0,1] over P/R/mAP50/mAP50-95).
+            if val_metrics.map50_95 > best_metric:
+                best_metric = val_metrics.map50_95
                 best_epoch = epoch + 1
-                best_path = weights_dir / "best.pt"
-                torch.save(checkpoint_data, best_path)
-                logger.info("New best model at epoch %d (loss=%.4f)", best_epoch, best_loss)
+                checkpoint_data["best_metric"] = best_metric
+                torch.save(checkpoint_data, weights_dir / "best.pt")
+                logger.info(
+                    "New best model at epoch %d (val mAP50-95=%.4f)", best_epoch, best_metric
+                )
+
+            # Last thing in the epoch, so a pruned trial still leaves checkpoints
+            # on disk. May raise optuna.TrialPruned, which propagates out of train().
+            self.report_epoch_to_hpo(epoch + 1, epoch_metrics)
 
         # Load best weights for subsequent evaluate/predict
         best_pt = weights_dir / "best.pt"
@@ -458,8 +500,10 @@ class SwinAdapter(BaseModelAdapter):
             self._model.load_state_dict(best_ckpt["model_state_dict"])
 
         training_metrics = {
-            "best_loss": best_loss,
+            "best_map50_95": best_metric if np.isfinite(best_metric) else None,
+            # -1 means no epoch in this run beat the checkpoint it resumed from.
             "best_epoch": best_epoch,
+            "final_loss": avg_loss,
             "final_lr": current_lr,
         }
 
@@ -477,56 +521,10 @@ class SwinAdapter(BaseModelAdapter):
 
     def evaluate(self, config: "ExperimentConfig") -> MetricsDict:
         """Evaluate on val split with pycocotools COCOeval."""
+        self._ensure_datasets(config)
         if self._model is None:
             self._load_model_from_artifacts(config)
-
-        hp = config.hyperparameters
-        # Metrics use their own low threshold, not the visualization one: AP is the
-        # area under the full PR curve, and pre-filtering at 0.5 truncates it.
-        threshold = hp.get("eval_score_threshold", EVAL_SCORE_THRESHOLD)
-        batch = hp.get("batch", 8)
-
-        self._model.to(self._device)
-        self._model.eval()
-
-        val_loader = DataLoader(
-            self._val_dataset,
-            batch_size=batch,
-            shuffle=False,
-            num_workers=4,
-            collate_fn=_collate_fn,
-            pin_memory=(self._device.type == "cuda"),
-        )
-
-        cat_ids = category_ids(self._val_split)
-        detections: list[dict] = []
-
-        with torch.inference_mode():
-            for images, targets in val_loader:
-                images = [img.to(self._device) for img in images]
-                outputs = self._model(images)
-
-                for output, target in zip(outputs, targets):
-                    image_id = int(target["image_id"].item())
-                    keep = output["scores"] >= threshold
-                    boxes = output["boxes"][keep].cpu().numpy()
-                    scores = output["scores"][keep].cpu().numpy()
-                    labels = output["labels"][keep].cpu().numpy().astype(int)
-
-                    for (x1, y1, x2, y2), score, label in zip(boxes, scores, labels):
-                        detections.append(
-                            {
-                                "image_id": image_id,
-                                # torchvision labels are 1-based with 0 = background.
-                                "category_id": cat_ids[label - 1],
-                                "bbox": [
-                                    float(x1), float(y1), float(x2 - x1), float(y2 - y1)
-                                ],
-                                "score": float(score),
-                            }
-                        )
-
-        return compute_coco_metrics(self._val_split, detections)
+        return self._run_validation(config)
 
     # ------------------------------------------------------------------ #
     # predict
@@ -534,6 +532,7 @@ class SwinAdapter(BaseModelAdapter):
 
     def predict(self, config: "ExperimentConfig") -> DetectionResult:
         """Run inference on test images; return per-frame sv.Detections."""
+        self._ensure_datasets(config)
         if self._model is None:
             self._load_model_from_artifacts(config)
 
@@ -587,6 +586,75 @@ class SwinAdapter(BaseModelAdapter):
     # ------------------------------------------------------------------ #
     # Internal helpers
     # ------------------------------------------------------------------ #
+
+    def _ensure_datasets(self, config: "ExperimentConfig") -> None:
+        """Rebuild datasets if prepare_data has not run in this process.
+
+        ``ExperimentRunner.train()`` skips ``prepare_data`` entirely when
+        ``resume_weights`` is set, so a resumed run would otherwise reach the
+        per-epoch validation pass with ``self._val_dataset is None``.
+        """
+        if self._train_dataset is not None:
+            return
+        from hlwdetector.dataset_manager import DatasetManager
+
+        logger.info("Datasets not prepared in this process; rebuilding from config")
+        self.prepare_data(DatasetManager(config), config)
+
+    def _run_validation(self, config: "ExperimentConfig") -> MetricsDict:
+        """Score the val split with COCOeval. Shared by train() and evaluate()."""
+        hp = config.hyperparameters
+        # Metrics use their own low threshold, not the visualization one: AP is the
+        # area under the full PR curve, and pre-filtering at 0.5 truncates it.
+        threshold = hp.get("eval_score_threshold", EVAL_SCORE_THRESHOLD)
+        batch = hp.get("batch", 8)
+
+        self._model.to(self._device)
+        self._model.eval()
+
+        val_loader = DataLoader(
+            self._val_dataset,
+            batch_size=batch,
+            shuffle=False,
+            num_workers=4,
+            collate_fn=_collate_fn,
+            pin_memory=(self._device.type == "cuda"),
+        )
+
+        cat_ids = category_ids(self._val_split)
+        detections: list[dict] = []
+
+        try:
+            with torch.inference_mode():
+                for images, targets in val_loader:
+                    images = [img.to(self._device) for img in images]
+                    outputs = self._model(images)
+
+                    for output, target in zip(outputs, targets):
+                        image_id = int(target["image_id"].item())
+                        keep = output["scores"] >= threshold
+                        boxes = output["boxes"][keep].cpu().numpy()
+                        scores = output["scores"][keep].cpu().numpy()
+                        labels = output["labels"][keep].cpu().numpy().astype(int)
+
+                        for (x1, y1, x2, y2), score, label in zip(boxes, scores, labels):
+                            detections.append(
+                                {
+                                    "image_id": image_id,
+                                    # torchvision labels are 1-based with 0 = background.
+                                    "category_id": cat_ids[label - 1],
+                                    "bbox": [
+                                        float(x1), float(y1), float(x2 - x1), float(y2 - y1)
+                                    ],
+                                    "score": float(score),
+                                }
+                            )
+        finally:
+            # The training loop re-enters train mode at the top of each epoch, but
+            # restoring it here keeps this method safe to call from anywhere.
+            self._model.train()
+
+        return compute_coco_metrics(self._val_split, detections)
 
     def _load_model_from_artifacts(self, config: "ExperimentConfig") -> None:
         """Load weights for evaluate/predict without a prior train() call."""

@@ -13,6 +13,7 @@ from ultralytics import YOLO, settings
 
 from hlwdetector import paths
 from hlwdetector.adapters.base import (
+    ULTRALYTICS_EPOCH_METRIC_KEYS,
     BaseModelAdapter,
     DetectionResult,
     MetricsDict,
@@ -40,13 +41,16 @@ class YOLOAdapter(BaseModelAdapter):
         prepare_data → train → evaluate → predict
     """
 
+    # Ultralytics validates every epoch, so trainer.metrics carries the values a
+    # pruner needs with no extra work from this adapter.
+    supports_pruning = True
+    EPOCH_METRIC_KEYS = ULTRALYTICS_EPOCH_METRIC_KEYS
+
     def __init__(self, artifact_manager, tracker) -> None:
         super().__init__(artifact_manager, tracker)
         self._model = None
         self._data_yaml_path: str | None = None
         self._training_result: TrainingResult | None = None
-        # Optional (epoch, metrics) -> None hook, set by HPO; may raise optuna.TrialPruned.
-        self._hpo_pruning_callback = None
 
     # ------------------------------------------------------------------ #
     # prepare_data
@@ -245,7 +249,10 @@ class YOLOAdapter(BaseModelAdapter):
         Fires once per epoch after validation completes. Logs training losses,
         validation metrics, and learning rates as a single dict at step=epoch.
         Future adapters should follow this same pattern using their framework's
-        equivalent hook, calling self.log_epoch(epoch, metrics).
+        equivalent hook, calling self._tracker.log_wandb_step(metrics, step=epoch).
+        Per-epoch metrics go to W&B only — routing them through tracker.log()
+        would persist them into metrics.json, which is reserved for the
+        post-training validation metrics written by ExperimentRunner.evaluate().
         """
         adapter = self
 
@@ -260,10 +267,9 @@ class YOLOAdapter(BaseModelAdapter):
                 )
             if trainer.lr:
                 metrics.update({k: float(v) for k, v in trainer.lr.items()})
-            if metrics:
+            if metrics and adapter._tracker is not None:
                 adapter._tracker.log_wandb_step(metrics, step=epoch)
-            if adapter._hpo_pruning_callback is not None:
-                adapter._hpo_pruning_callback(epoch, metrics)  # may raise optuna.TrialPruned
+            adapter.report_epoch_to_hpo(epoch, metrics)  # may raise optuna.TrialPruned
 
             return metrics
 

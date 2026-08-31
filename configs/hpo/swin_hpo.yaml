@@ -1,0 +1,49 @@
+# Swin Transformer + Faster R-CNN Optuna study configuration
+model_name: swin
+metric: map50_95
+
+# Canonical data inputs shared by every trial to generate ExperimentConfigs
+coco_json: data/h23/instances_subset.json
+images_dir: data/h23/images
+split_json: data/h23/split_h23_subset.json
+output_dir: outputs
+wandb_project: bird-detection
+random_seed: 42
+
+# Optuna arguments
+study_args:  # kwargs that will be passed into optuna.create_study
+  study_name: swin_hpo
+  direction: maximize
+  sampler: TPE  # Note: default n_startup_trials=10
+  pruner: median  # the adapter validates every epoch and reports val/mAP50_95
+  storage: ~
+optimize_args:  # kwargs that will be passed into optuna.study.optimize
+  # MedianPruner does nothing until n_startup_trials (Optuna default: 5) trials
+  # have completed, so a 4-trial study would never prune.
+  n_trials: 8
+  timeout: ~
+
+# Hyperparameter search space
+hyperparameters:
+  static:
+    backbone: swin_tiny_patch4_window7_224
+    epochs: 20
+    # Short side of the network input, NOT a square. Keep at 640: shrinking it
+    # drops h23's median bird below every RPN anchor. See CLAUDE.md.
+    imgsz: 640
+    device: "0"
+    lr_step_size: 20
+    lr_gamma: 0.1
+    eval_score_threshold: 0.001  # keep low or AP is understated
+  categorical:
+    batch: [2, 4, 8]  # swin is memory-heavy at imgsz 640
+  int:
+  float:
+    lr:
+      - 0.00001
+      - 0.001
+      - log: True
+    weight_decay:
+      - 0.001
+      - 0.1
+      - log: True

@@ -17,31 +17,6 @@ from hlwdetector.runner import ExperimentRunner
 
 logger = logging.getLogger(__name__)
 
-# Maps MetricsDict field names (used by config `metric`) to the Ultralytics per-epoch
-# metric keys reported in the on_fit_epoch_end callback. "f1" has no direct per-epoch
-# key and is derived from precision/recall in _epoch_metric_value().
-_METRIC_KEY_MAP = {
-    "precision": "metrics/precision(B)",
-    "recall":    "metrics/recall(B)",
-    "map50":     "metrics/mAP50(B)",
-    "map50_95":  "metrics/mAP50-95(B)",
-}
-
-
-def _epoch_metric_value(metric: str, metrics: dict):
-    """Extract `metric` (a MetricsDict field name) from an Ultralytics per-epoch metrics
-    dict, deriving f1 from precision/recall. Returns None if the value is unavailable."""
-    if metric == "f1":
-        p = metrics.get(_METRIC_KEY_MAP["precision"])
-        r = metrics.get(_METRIC_KEY_MAP["recall"])
-        if p is None or r is None or (p + r) == 0:
-            return None
-        return 2 * p * r / (p + r)
-    key = _METRIC_KEY_MAP.get(metric)
-    if key is None:
-        return None
-    return metrics.get(key)
-
 
 class HPOptimizer:
     def __init__(self, hpo_config: str | Path):
@@ -172,9 +147,16 @@ class HPOptimizer:
         runner = ExperimentRunner(experiment_config)
 
         # Report per-epoch metrics to Optuna so the pruner can stop losing trials early.
+        # The adapter owns the metric-name translation; see BaseModelAdapter.
         def _pruning_callback(epoch, metrics):
-            value = _epoch_metric_value(self.config.metric, metrics)
+            value = runner.adapter.epoch_metric_value(self.config.metric, metrics)
             if value is None:
+                logger.debug(
+                    "Trial %d epoch %d: %s not found in the metrics reported by %s "
+                    "(keys: %s); nothing to prune on this epoch.",
+                    trial.number, epoch, self.config.metric,
+                    type(runner.adapter).__name__, sorted(metrics),
+                )
                 return
             trial.report(value, step=epoch)
             if trial.should_prune():

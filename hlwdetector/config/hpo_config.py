@@ -129,7 +129,20 @@ class HPOConfig:
         from hlwdetector.registry import get_adapter  # avoid circular import at module level
 
         # Check model_name is registered
-        get_adapter(self.model_name)  # raises KeyError with helpful message if unknown
+        adapter_cls = get_adapter(self.model_name)  # raises KeyError with helpful message if unknown
+
+        # Pruning needs the adapter to report per-epoch metrics. Setting a pruner on
+        # one that does not used to be a silent no-op; make it an error instead.
+        pruner = self.study_args.pruner
+        prunes = pruner is not None and str(pruner).lower() != "none"
+        if prunes and not adapter_cls.supports_pruning:
+            raise ValueError(
+                f"pruner {pruner!r} is set, but the {self.model_name!r} adapter "
+                f"({adapter_cls.__name__}) does not report per-epoch metrics to Optuna, "
+                f"so no trial could ever be pruned. Set 'pruner: none' in study_args, or "
+                f"give the adapter supports_pruning/EPOCH_METRIC_KEYS and a "
+                f"report_epoch_to_hpo() call in its training loop."
+            )
 
         # Check dataset JSON files exist
         for attr in ("coco_json", "split_json"):

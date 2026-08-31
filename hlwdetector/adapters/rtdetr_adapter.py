@@ -13,6 +13,7 @@ from ultralytics import RTDETR, settings
 
 from hlwdetector import paths
 from hlwdetector.adapters.base import (
+    ULTRALYTICS_EPOCH_METRIC_KEYS,
     BaseModelAdapter,
     DetectionResult,
     MetricsDict,
@@ -45,6 +46,11 @@ class RTDETRAdapter(BaseModelAdapter):
     Internal state is preserved across sequential calls:
         prepare_data → train → evaluate → predict
     """
+
+    # Same Ultralytics trainer as the YOLO adapter: validation runs every epoch and
+    # trainer.metrics already carries the keys a pruner needs.
+    supports_pruning = True
+    EPOCH_METRIC_KEYS = ULTRALYTICS_EPOCH_METRIC_KEYS
 
     def __init__(self, artifact_manager, tracker) -> None:
         super().__init__(artifact_manager, tracker)
@@ -263,8 +269,9 @@ class RTDETRAdapter(BaseModelAdapter):
                 )
             if trainer.lr:
                 metrics.update({k: float(v) for k, v in trainer.lr.items()})
-            if metrics:
+            if metrics and adapter._tracker is not None:
                 adapter._tracker.log_wandb_step(metrics, step=epoch)
+            adapter.report_epoch_to_hpo(epoch, metrics)  # may raise optuna.TrialPruned
 
         self._model.add_callback("on_fit_epoch_end", on_fit_epoch_end)
 

@@ -28,6 +28,7 @@ from transformers import AutoConfig, AutoImageProcessor, AutoModelForObjectDetec
 
 from hlwdetector import paths
 from hlwdetector.adapters.base import (
+    TORCH_EPOCH_METRIC_KEYS,
     BaseModelAdapter,
     DetectionResult,
     MetricsDict,
@@ -220,6 +221,10 @@ class DETRAdapter(BaseModelAdapter):
         prepare_data → train → evaluate → predict
     """
 
+    # train() runs a validation pass every epoch and reports it under these keys.
+    supports_pruning = True
+    EPOCH_METRIC_KEYS = TORCH_EPOCH_METRIC_KEYS
+
     def __init__(self, artifact_manager, tracker) -> None:
         super().__init__(artifact_manager, tracker)
         self._model = None
@@ -235,8 +240,6 @@ class DETRAdapter(BaseModelAdapter):
         self._id2label: dict[int, str] | None = None
         self._num_labels: int | None = None
         self._training_result: TrainingResult | None = None
-        # Set by HPOptimizer when a study is running; see hp_optimizer.py.
-        self._hpo_pruning_callback = None
 
     # ------------------------------------------------------------------ #
     # prepare_data
@@ -474,11 +477,8 @@ class DETRAdapter(BaseModelAdapter):
                 }
             )
 
-            self.log_epoch(epoch + 1, epoch_metrics)
             if self._tracker is not None:
                 self._tracker.log_wandb_step(epoch_metrics, step=epoch + 1)
-            if self._hpo_pruning_callback is not None:
-                self._hpo_pruning_callback(epoch + 1, epoch_metrics)
 
             logger.info(
                 "Epoch %d/%d — loss: %.4f, lr: %.6f, val mAP50-95: %.4f, val mAP50: %.4f",
@@ -507,6 +507,10 @@ class DETRAdapter(BaseModelAdapter):
                 logger.info(
                     "New best model at epoch %d (val mAP50-95=%.4f)", best_epoch, best_metric
                 )
+
+            # Last thing in the epoch, so a pruned trial still leaves checkpoints
+            # on disk. May raise optuna.TrialPruned, which propagates out of train().
+            self.report_epoch_to_hpo(epoch + 1, epoch_metrics)
 
         # Load best weights for subsequent evaluate/predict
         best_pt = weights_dir / "best.pt"

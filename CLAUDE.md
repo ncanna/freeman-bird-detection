@@ -196,7 +196,7 @@ hyperparameters:                  # Search space tiers: static | categorical | i
     lr0: [0.0001, 0.01, {log: True}]
 ```
 
-Pruners read per-epoch metrics reported by the adapter's training callback; pruning is currently wired for the YOLO adapter.
+Pruners read per-epoch metrics reported by the adapter's training callback. Every adapter supports this; see **HPO Flow** for the protocol.
 
 ## Architecture
 
@@ -206,6 +206,9 @@ Each model is wrapped in an adapter that implements `BaseModelAdapter`:
 - `train(config)` — train or load pretrained weights
 - `evaluate(config)` — evaluate on val split, return `MetricsDict`
 - `predict(config)` — inference on test split, return `DetectionResult`
+
+To take part in HPO pruning an adapter also sets `supports_pruning = True` and `EPOCH_METRIC_KEYS`, and
+calls `self.report_epoch_to_hpo(epoch, metrics)` at the end of each epoch — see **HPO Flow**.
 
 New adapters self-register via `@register_adapter("name")` and are imported through `adapters/__init__.py`.
 
@@ -217,6 +220,12 @@ New adapters self-register via `@register_adapter("name")` and are imported thro
 - **`strict_img_size=False` is required.** `swin_*_224` asserts input matches the 224 baked into its name, but the detection transform emits variable, non-square batches (1280x720 at `imgsz: 640` → 640x1152 after `size_divisible=32` padding). The only surviving constraint is divisibility by the patch size (4), which that padding satisfies.
 
 `imgsz` sets the **short side** of the network input with aspect ratio preserved (torchvision's `min_size` convention), not a square as in the YOLO/RT-DETR adapters — so `imgsz: 640` means 640x1152 here, not a 640x640 letterbox. Keep it at 640: h23 birds have a median √area of ~56px natively, which lands near the smallest anchor (32px) after this resize. Shrinking to 224 drops the median bird to ~13px, below every anchor, leaving the RPN with almost no positive targets.
+
+The training loop **validates every epoch** (`_run_validation`, shared with `evaluate()`) and selects
+`best.pt` on **val mAP50-95**, not on training loss. This matches the detr adapter and Ultralytics,
+whose `best.pt` rule is `DetMetrics.fitness` = `w[0,0,0,1]` over `[P, R, mAP50, mAP50-95]`, i.e. mAP50-95
+exactly. It is also the per-epoch metric stream the HPO pruner reads, so it is not optional: a trial
+that skipped validation would report nothing and could never be pruned.
 
 ### DETR Adapter Constraints
 `detr_adapter.py` is **checkpoint-driven**: `config.model_weights` names any HuggingFace object-detection
@@ -321,29 +330,46 @@ checkpoints store epochs *completed* and the loop runs `range(start_epoch, epoch
 checkpoint with `epochs: 3` trains nothing, so the adapter raises rather than silently no-op.
 
 **`ExperimentRunner.train()` skips `prepare_data` entirely when `resume_weights` is set**, so an adapter
-that needs its datasets during training (e.g. detr's per-epoch validation pass) must rebuild them
-itself. `DETRAdapter._ensure_datasets` does this by constructing its own `DatasetManager(config)` and
-calling `prepare_data`. **The swin adapter does not**, so its `_val_dataset`/`_val_split` stay `None` on
-a resumed run and a subsequent `evaluate()`/`predict()` in the same process will fail — a known gap.
+that needs its datasets during training (swin's and detr's per-epoch validation passes) must rebuild
+them itself. Both `SwinAdapter._ensure_datasets` and `DETRAdapter._ensure_datasets` do this by
+constructing their own `DatasetManager(config)` and calling `prepare_data`; each calls it at the top of
+`train()`, `evaluate()`, and `predict()`.
 
-The detr adapter also carries `best_metric` **across** the resume boundary (a resumed run is a
-continuation, so an epoch counts as "best" only if it beats the whole history) and seeds `best.pt` from
-the resumed checkpoint so `best_weights_path` is always populated. `training_metrics.best_epoch == -1`
-means no epoch in the new run beat the checkpoint it resumed from.
+Both adapters also carry `best_metric` **across** the resume boundary (a resumed run is a continuation,
+so an epoch counts as "best" only if it beats the whole history) and seed `best.pt` from the resumed
+checkpoint so `best_weights_path` is always populated. `training_metrics.best_epoch == -1` means no
+epoch in the new run beat the checkpoint it resumed from.
 
 ### HPO Flow
 1. `HPOptimizer` loads an `HPOConfig` and creates an `ArtifactManager` for the study dir (`outputs/hpo/<study>_<timestamp>/`)
 2. `run_study()` builds the Optuna sampler/pruner/storage from the config's name strings and calls `study.optimize()`
 3. Each trial samples the search space, merges it with `hyperparameters.static` into an `ExperimentConfig`, and runs a fresh `ExperimentRunner.train()` + `evaluate()`
-4. The adapter's per-epoch callback reports metrics to Optuna so the pruner can stop losing trials early (YOLO adapter)
+4. The adapter's per-epoch callback reports metrics to Optuna so the pruner can stop losing trials early
 5. Trial results are appended to `trials.csv`; the best trial is written to `study_summary.json`
 
-**Pruning only works for the YOLO adapter.** `hp_optimizer._METRIC_KEY_MAP` hardcodes Ultralytics key
-strings (`metrics/mAP50-95(B)`, …), and `hp_optimizer` assigns `adapter._hpo_pruning_callback`
-unconditionally, so an rtdetr/swin/detr study configured with a pruner sets an attribute that either
-nobody reads or that reports keys Optuna cannot match — no error, no pruning. The detr adapter defines
-and invokes the hook so the wiring exists, but it emits `val/mAP50_95`-style keys, not Ultralytics ones.
-See `docs/plans/hpo-pruning-rtdetr-swin.md`.
+**Pruning works for all four adapters**, through a protocol on `BaseModelAdapter` rather than by
+convention (three adapters privately agreeing on an attribute name is what made the original
+YOLO-only wiring a silent no-op). Each adapter declares:
+
+- `supports_pruning: bool` — `True` once its training loop calls `report_epoch_to_hpo(epoch, metrics)`.
+- `EPOCH_METRIC_KEYS` — `MetricsDict` field name → that framework's per-epoch metric key. Two shared
+  maps live in `adapters/base.py`: `ULTRALYTICS_EPOCH_METRIC_KEYS` (`metrics/mAP50-95(B)`, … — yolo,
+  rtdetr) and `TORCH_EPOCH_METRIC_KEYS` (`val/mAP50_95`, … — swin, detr, matching the keys
+  `ExperimentRunner.evaluate()` logs; keep the two in sync).
+
+`HPOptimizer` no longer knows any framework's key strings — `_pruning_callback` calls
+`adapter.epoch_metric_value(metric, metrics)`, which resolves through `EPOCH_METRIC_KEYS` and derives
+`f1` from precision/recall when a framework has no per-epoch `f1` (the Ultralytics case).
+`report_epoch_to_hpo` is called **last in the epoch body**, after `last.pt`/`best.pt` are written, so a
+pruned trial still leaves checkpoints on disk; `optuna.TrialPruned` then propagates out of `train()` to
+`_objective`, which records the trial as `pruned` and skips `save_model_info`.
+
+`HPOConfig.validate()` raises if a pruner is configured against an adapter with
+`supports_pruning = False`, so the next adapter added cannot silently repeat this bug.
+
+One Optuna gotcha, not a wiring problem: `MedianPruner` prunes nothing until `n_startup_trials`
+(default **5**) trials have *completed*, so a 4-trial study never prunes regardless of the metric
+stream. `_build_pruner` constructs pruners with no arguments, so this is not tunable from YAML.
 
 ### Split Format (split.json)
 ```json

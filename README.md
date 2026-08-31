@@ -185,6 +185,13 @@ additional epochs — checkpoints store epochs *completed* and the loop runs `ra
 Resuming a 3-epoch checkpoint with `epochs: 3` would train nothing, so the adapter raises instead of
 silently doing no work.
 
+Those two adapters also carry `best_metric` across the resume boundary: a resumed run is a continuation,
+so an epoch counts as "best" only if it beats the whole history, and the resumed checkpoint seeds
+`best.pt` so `best_weights_path` is always populated. `training_metrics.best_epoch == -1` means no epoch
+in the new run beat the checkpoint it resumed from. Because `ExperimentRunner.train()` skips
+`prepare_data` when `resume_weights` is set, each rebuilds its datasets through `_ensure_datasets` —
+their per-epoch validation pass needs the val split.
+
 ### Running Multiple Experiments
 
 To run several configs in sequence:
@@ -204,9 +211,9 @@ See `run_experiments.py` for a runnable version of this with per-config timing.
 
 `HPOptimizer` runs an [Optuna](https://optuna.org/) study over a search space, spawning one full `ExperimentRunner` per trial. Every trial trains, evaluates, and records its result; the metric returned to Optuna is the config field you choose via `metric`. Poorly performing trials can be stopped early through Optuna pruners, which read the per-epoch metrics reported by the model adapter.
 
-> **Pruning currently works only with the YOLO adapter.** The per-epoch metric keys Optuna looks for are hardcoded Ultralytics strings, so a study configured with a pruner on any other adapter runs to completion without pruning — silently, with no error.
+Pruning works with every adapter. Each declares `supports_pruning` and an `EPOCH_METRIC_KEYS` map naming the per-epoch metric keys its framework emits, then calls `report_epoch_to_hpo()` at the end of each epoch — see [Model Adapters](#adapters--model-adapters). `HPOptimizer` resolves the metric through the adapter, so it holds no framework-specific key strings, and `HPOConfig.validate()` raises if a pruner is configured against an adapter with `supports_pruning = False`.
 
-Define a study config in `configs/hpo/` (all paths resolve relative to the repo root):
+Define a study config in `configs/hpo/` — one per adapter (`yolo26_hpo.yaml`, `rtdetr_hpo.yaml`, `swin_hpo.yaml`, `detr_hpo.yaml`). All paths resolve relative to the repo root:
 
 ```yaml
 model_name: yolo
@@ -279,11 +286,11 @@ In addition, every trial produces a full standalone experiment directory (under 
 ### `config/` — Configuration
 
 - **`config/experiment_config.py`** — `ExperimentConfig`, a dataclass defining all parameters for a single experiment. Loaded from YAML with path fields resolved relative to the repo root. Includes `wandb_group`, which the HPO optimizer uses to group all trials of a study in W&B.
-- **`config/hpo_config.py`** — `HPOConfig` (plus the `StudyArgs` and `OptimizeArgs` dataclasses) defining an Optuna study: shared data inputs, `study_args`/`optimize_args`, the `metric` to optimize, and the `hyperparameters` search space. `validate()` checks the adapter, data paths, metric, direction, trial count, and search-space tiers.
+- **`config/hpo_config.py`** — `HPOConfig` (plus the `StudyArgs` and `OptimizeArgs` dataclasses) defining an Optuna study: shared data inputs, `study_args`/`optimize_args`, the `metric` to optimize, and the `hyperparameters` search space. `validate()` checks the adapter, data paths, metric, direction, trial count, search-space tiers, and that the adapter supports pruning when a pruner is configured.
 
 ### `hp_optimizer.py` — Hyperparameter Optimization
 
-`HPOptimizer` drives an Optuna study, translating the config's sampler/pruner/storage names into Optuna objects and running one `ExperimentRunner` per trial. `run_study()` is the entry point; it returns the completed `optuna.Study` and writes a study summary. See [Hyperparameter Optimization](#hyperparameter-optimization) above for usage.
+`HPOptimizer` drives an Optuna study, translating the config's sampler/pruner/storage names into Optuna objects and running one `ExperimentRunner` per trial. `run_study()` is the entry point; it returns the completed `optuna.Study` and writes a study summary. Per-epoch values reach the pruner through `adapter.epoch_metric_value(metric, metrics)`, so the optimizer stays free of framework-specific metric names. See [Hyperparameter Optimization](#hyperparameter-optimization) above for usage.
 
 ### `runner.py` — Experiment Runner
 
@@ -301,14 +308,27 @@ All models implement `BaseModelAdapter` from `adapters/base.py`:
 
 ```python
 class BaseModelAdapter(ABC):
+    supports_pruning: bool = False       # True once train() reports per-epoch metrics
+    EPOCH_METRIC_KEYS: dict[str, str] = {}   # MetricsDict field -> framework's epoch key
+
     def __init__(self, artifact_manager, tracker) -> None: ...
     def prepare_data(self, dataset_manager, config) -> None: ...
     def train(self, config) -> TrainingResult: ...
     def evaluate(self, config) -> MetricsDict: ...
     def predict(self, config) -> DetectionResult: ...
+
+    # Concrete, provided by the base class:
+    def report_epoch_to_hpo(self, epoch, metrics) -> None: ...
+    @classmethod
+    def epoch_metric_value(cls, metric, metrics) -> float | None: ...
 ```
 
 `evaluate()` returns a `MetricsDict` (precision, recall, f1, mAP50, mAP50-95, optional accuracy); `predict()` returns a `DetectionResult`, a `dict[str, sv.Detections]` keyed by frame stem. Adapters are registered with `@register_adapter(name)` and resolved by `model_name` from the config.
+
+**HPO pruning protocol.** An adapter takes part by setting `supports_pruning = True`, pointing `EPOCH_METRIC_KEYS` at the right key map, and calling `self.report_epoch_to_hpo(epoch, metrics)` as the last statement of each epoch — after `last.pt`/`best.pt` are written, so a pruned trial still leaves checkpoints on disk. That call raises `optuna.TrialPruned` when Optuna decides to stop the trial, and the exception propagates out of `train()` to `HPOptimizer`. Two key maps live in `adapters/base.py`:
+
+- `ULTRALYTICS_EPOCH_METRIC_KEYS` — `metrics/mAP50-95(B)`, … (yolo, rtdetr). No per-epoch `f1` key; `epoch_metric_value()` derives it from precision and recall.
+- `TORCH_EPOCH_METRIC_KEYS` — `val/mAP50_95`, … (swin, detr), the same keys `ExperimentRunner.evaluate()` logs.
 
 Two contracts every adapter must honour:
 
@@ -332,6 +352,8 @@ Swin Transformer backbone (timm) + FPN + torchvision Faster R-CNN head, with a h
 - **`strict_img_size=False` is required**, since `swin_*_224` otherwise asserts a 224px input while the detection transform emits variable, non-square batches.
 
 `imgsz` is the **short side** (torchvision's `min_size`), not a square. Keep it at 640: h23 birds have a median √area of ~56px, which lands near the smallest anchor (32px) after resize; shrinking to 224 drops them below every anchor and starves the RPN of positive targets.
+
+The training loop runs a validation pass every epoch (`_run_validation`, shared with `evaluate()`) and selects `best.pt` on val mAP50-95. That is also the per-epoch metric stream Optuna's pruners read.
 
 **`detr_adapter.py`** — `@register_adapter("detr")`
 
@@ -466,5 +488,6 @@ converter.coco_to_yolo(
 3. Import the adapter in `hlwdetector/adapters/__init__.py` to trigger registration — **without this the adapter is invisible** and `config.validate()` fails with a `KeyError`
 4. Set `model_name: my_model` in a config YAML
 5. Add a config under `configs/experiment/`, and document every hyperparameter key your adapter reads in its class docstring
+6. To support HPO pruning, set `supports_pruning = True` and `EPOCH_METRIC_KEYS`, and call `self.report_epoch_to_hpo(epoch, metrics)` at the end of each epoch. Without it, an HPO study on this adapter must set `pruner: none` — `HPOConfig.validate()` rejects any other pruner.
 
-For a PyTorch-native model, `swin_adapter.py` and `detr_adapter.py` are the closest templates: both hand-roll their training loop, save `{best,last}.pt` under `work/runs/train/weights/`, restore optimizer/scheduler/epoch on resume, and score through `compute_coco_metrics`. Reuse `resolve_device()` from `adapters/base.py` rather than reimplementing device-string parsing.
+For a PyTorch-native model, `swin_adapter.py` and `detr_adapter.py` are the closest templates: both hand-roll their training loop, save `{best,last}.pt` under `work/runs/train/weights/`, validate every epoch and select `best.pt` on val mAP50-95, restore optimizer/scheduler/epoch on resume, and score through `compute_coco_metrics`. Reuse `resolve_device()` and `TORCH_EPOCH_METRIC_KEYS` from `adapters/base.py` rather than reimplementing device-string parsing or a key map.
