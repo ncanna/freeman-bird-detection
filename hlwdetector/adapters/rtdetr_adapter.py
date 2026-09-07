@@ -13,6 +13,7 @@ from ultralytics import RTDETR, settings
 
 from hlwdetector import paths
 from hlwdetector.adapters.base import (
+    ULTRALYTICS_EPOCH_METRIC_KEYS,
     BaseModelAdapter,
     DetectionResult,
     MetricsDict,
@@ -45,6 +46,11 @@ class RTDETRAdapter(BaseModelAdapter):
     Internal state is preserved across sequential calls:
         prepare_data → train → evaluate → predict
     """
+
+    # Same Ultralytics trainer as the YOLO adapter: validation runs every epoch and
+    # trainer.metrics already carries the keys a pruner needs.
+    supports_pruning = True
+    EPOCH_METRIC_KEYS = ULTRALYTICS_EPOCH_METRIC_KEYS
 
     def __init__(self, artifact_manager, tracker) -> None:
         super().__init__(artifact_manager, tracker)
@@ -117,7 +123,7 @@ class RTDETRAdapter(BaseModelAdapter):
 
     def train(self, config: "ExperimentConfig") -> TrainingResult:
         """Fine-tune RT-DETR and return TrainingResult."""
-        if self._data_yaml_path is None and config.resume_from is None:
+        if self._data_yaml_path is None and config.resume_weights is None:
             raise RuntimeError("Call prepare_data() before train().")
 
         hp = config.hyperparameters
@@ -127,6 +133,10 @@ class RTDETRAdapter(BaseModelAdapter):
         batch = hp.get("batch")
         device = hp.get("device")
 
+        # Collect extra hyperparameters (augmentation, lr, etc.) to pass through
+        _reserved_keys = {"model_weights", "epochs", "imgsz", "batch", "device"}
+        extra_kwargs = {k: v for k, v in hp.items() if k not in _reserved_keys}
+
         runs_dir = str(Path(self.work_dir) / "runs")
         settings.update({
             "runs_dir": runs_dir,
@@ -134,7 +144,7 @@ class RTDETRAdapter(BaseModelAdapter):
             "wandb": False,
         })
 
-        if config.resume_from is None:
+        if config.resume_weights is None:
             self._model = RTDETR(model_weights)
             self._register_epoch_callback()
             self._model.train(
@@ -145,10 +155,11 @@ class RTDETRAdapter(BaseModelAdapter):
                 device=device,
                 project=runs_dir,
                 name="train",
+                **extra_kwargs,
             )
         else:
             self._discover_data_yaml(config)
-            self._model = RTDETR(config.resume_from)
+            self._model = RTDETR(config.resume_weights)
             self._register_epoch_callback()
             self._model.train(
                 data=self._data_yaml_path,
@@ -158,6 +169,7 @@ class RTDETRAdapter(BaseModelAdapter):
                 device=device,
                 project=runs_dir,
                 name="train",
+                **extra_kwargs,
             )
 
         run_dir = Path(self._model.trainer.save_dir)
@@ -257,8 +269,9 @@ class RTDETRAdapter(BaseModelAdapter):
                 )
             if trainer.lr:
                 metrics.update({k: float(v) for k, v in trainer.lr.items()})
-            if metrics:
+            if metrics and adapter._tracker is not None:
                 adapter._tracker.log_wandb_step(metrics, step=epoch)
+            adapter.report_epoch_to_hpo(epoch, metrics)  # may raise optuna.TrialPruned
 
         self._model.add_callback("on_fit_epoch_end", on_fit_epoch_end)
 
@@ -266,21 +279,21 @@ class RTDETRAdapter(BaseModelAdapter):
         """Load weights for evaluate/predict without a prior train() call.
 
         Priority:
-          1. config.resume_from (resume-training flow)
+          1. config.resume_weights (resume-training flow)
           2. best_weights_path from model.json in experiment_dir (attach flow)
         """
-        if config.resume_from is not None:
-            weights_path = Path(config.resume_from)
+        if config.resume_weights is not None:
+            weights_path = Path(config.resume_weights)
             if not weights_path.exists():
                 raise FileNotFoundError(f"Weights file not found: {weights_path}")
             self._model = RTDETR(str(weights_path))
-            logger.info("Loaded weights from config.resume_from: %s", weights_path)
+            logger.info("Loaded weights from config.resume_weights: %s", weights_path)
             return
 
         model_json_path = Path(self.experiment_dir) / "model.json"
         if not model_json_path.exists():
             raise FileNotFoundError(
-                f"No model loaded, resume_from is not set, and model.json not found in: "
+                f"No model loaded, resume_weights is not set, and model.json not found in: "
                 f"{self.experiment_dir}"
             )
         model_info = json.loads(model_json_path.read_text())
@@ -302,7 +315,7 @@ class RTDETRAdapter(BaseModelAdapter):
 
         Priority:
           1. self.work_dir/rtdetr.yaml — present in attach flow
-          2. config.resume_experiment work dir — resume-training flow
+          2. config.resume_experiment_name work dir — resume-training flow
         """
         direct_candidate = Path(self.work_dir) / "rtdetr.yaml"
         if direct_candidate.exists():
@@ -310,18 +323,18 @@ class RTDETRAdapter(BaseModelAdapter):
             logger.info("Found data yaml in work_dir: %s", self._data_yaml_path)
             return
 
-        if config.resume_experiment is None:
+        if config.resume_experiment_name is None:
             raise RuntimeError(
-                "rtdetr.yaml not found in work_dir and resume_experiment is not set; "
+                "rtdetr.yaml not found in work_dir and resume_experiment_name is not set; "
                 "cannot locate original rtdetr.yaml."
             )
-        work_dir = Path(config.output_dir) / "experiments" / config.resume_experiment / "work"
+        work_dir = config.resume_experiment_dir / "work"
         candidate = work_dir / "rtdetr.yaml"
         if candidate.exists():
             self._data_yaml_path = str(candidate)
-            logger.info("Found data yaml via resume_experiment: %s", self._data_yaml_path)
+            logger.info("Found data yaml via resume_experiment_name: %s", self._data_yaml_path)
         else:
             raise FileNotFoundError(
                 f"rtdetr.yaml not found at {candidate}. "
-                f"Ensure prepare_data() was run in experiment '{config.resume_experiment}'."
+                f"Ensure prepare_data() was run in experiment '{config.resume_experiment_name}'."
             )

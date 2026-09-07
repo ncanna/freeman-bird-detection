@@ -13,6 +13,7 @@ from ultralytics import YOLO, settings
 
 from hlwdetector import paths
 from hlwdetector.adapters.base import (
+    ULTRALYTICS_EPOCH_METRIC_KEYS,
     BaseModelAdapter,
     DetectionResult,
     MetricsDict,
@@ -40,13 +41,16 @@ class YOLOAdapter(BaseModelAdapter):
         prepare_data → train → evaluate → predict
     """
 
+    # Ultralytics validates every epoch, so trainer.metrics carries the values a
+    # pruner needs with no extra work from this adapter.
+    supports_pruning = True
+    EPOCH_METRIC_KEYS = ULTRALYTICS_EPOCH_METRIC_KEYS
+
     def __init__(self, artifact_manager, tracker) -> None:
         super().__init__(artifact_manager, tracker)
         self._model = None
         self._data_yaml_path: str | None = None
         self._training_result: TrainingResult | None = None
-        # Optional (epoch, metrics) -> None hook, set by HPO; may raise optuna.TrialPruned.
-        self._hpo_pruning_callback = None
 
     # ------------------------------------------------------------------ #
     # prepare_data
@@ -119,7 +123,7 @@ class YOLOAdapter(BaseModelAdapter):
 
     def train(self, config: "ExperimentConfig") -> TrainingResult:
         """Fine-tune YOLO and return TrainingResult."""
-        if self._data_yaml_path is None and config.resume_from is None:
+        if self._data_yaml_path is None and config.resume_weights is None:
             raise RuntimeError("Call prepare_data() before train().")
 
         hp = config.hyperparameters
@@ -135,7 +139,7 @@ class YOLOAdapter(BaseModelAdapter):
             "wandb": False,
         })
 
-        if config.resume_from is None:
+        if config.resume_weights is None:
             self._model = YOLO(model_weights)
             self._register_epoch_callback()
             self._model.train(
@@ -146,7 +150,7 @@ class YOLOAdapter(BaseModelAdapter):
             )
         else:  # resume: load pretrained weights, train fresh with full hparam control
             self._discover_data_yaml(config)
-            self._model = YOLO(config.resume_from)
+            self._model = YOLO(config.resume_weights)
             self._register_epoch_callback()
             self._model.train(
                 data=self._data_yaml_path,
@@ -245,7 +249,10 @@ class YOLOAdapter(BaseModelAdapter):
         Fires once per epoch after validation completes. Logs training losses,
         validation metrics, and learning rates as a single dict at step=epoch.
         Future adapters should follow this same pattern using their framework's
-        equivalent hook, calling self.log_epoch(epoch, metrics).
+        equivalent hook, calling self._tracker.log_wandb_step(metrics, step=epoch).
+        Per-epoch metrics go to W&B only — routing them through tracker.log()
+        would persist them into metrics.json, which is reserved for the
+        post-training validation metrics written by ExperimentRunner.evaluate().
         """
         adapter = self
 
@@ -260,10 +267,9 @@ class YOLOAdapter(BaseModelAdapter):
                 )
             if trainer.lr:
                 metrics.update({k: float(v) for k, v in trainer.lr.items()})
-            if metrics:
+            if metrics and adapter._tracker is not None:
                 adapter._tracker.log_wandb_step(metrics, step=epoch)
-            if adapter._hpo_pruning_callback is not None:
-                adapter._hpo_pruning_callback(epoch, metrics)  # may raise optuna.TrialPruned
+            adapter.report_epoch_to_hpo(epoch, metrics)  # may raise optuna.TrialPruned
 
             return metrics
 
@@ -273,22 +279,22 @@ class YOLOAdapter(BaseModelAdapter):
         """Load weights for evaluate/predict without a prior train() call.
 
         Priority:
-          1. config.resume_from (resume-training flow)
+          1. config.resume_weights (resume-training flow)
           2. best_weights_path from model.json in experiment_dir (attach flow)
         """
-        if config.resume_from is not None:
-            weights_path = Path(config.resume_from)
+        if config.resume_weights is not None:
+            weights_path = Path(config.resume_weights)
             if not weights_path.exists():
                 raise FileNotFoundError(f"Weights file not found: {weights_path}")
             self._model = YOLO(str(weights_path))
-            logger.info("Loaded weights from config.resume_from: %s", weights_path)
+            logger.info("Loaded weights from config.resume_weights: %s", weights_path)
             return
 
         # Attach flow: read best_weights_path from model.json
         model_json_path = Path(self.experiment_dir) / "model.json"
         if not model_json_path.exists():
             raise FileNotFoundError(
-                f"No model loaded, resume_from is not set, and model.json not found in: "
+                f"No model loaded, resume_weights is not set, and model.json not found in: "
                 f"{self.experiment_dir}"
             )
         model_info = json.loads(model_json_path.read_text())
@@ -311,7 +317,7 @@ class YOLOAdapter(BaseModelAdapter):
         Priority:
           1. self.work_dir/yolo.yaml — present when attached to an existing experiment
              (work_dir IS the original experiment's work dir in the attach flow)
-          2. config.resume_experiment work dir — existing resume-training flow
+          2. config.resume_experiment_name work dir — existing resume-training flow
         """
         direct_candidate = Path(self.work_dir) / "yolo.yaml"
         if direct_candidate.exists():
@@ -319,18 +325,18 @@ class YOLOAdapter(BaseModelAdapter):
             logger.info("Found data yaml in work_dir: %s", self._data_yaml_path)
             return
 
-        if config.resume_experiment is None:
+        if config.resume_experiment_name is None:
             raise RuntimeError(
-                "yolo.yaml not found in work_dir and resume_experiment is not set; "
+                "yolo.yaml not found in work_dir and resume_experiment_name is not set; "
                 "cannot locate original yolo.yaml."
             )
-        work_dir  = Path(config.output_dir) / "experiments" / config.resume_experiment / "work"
+        work_dir  = config.resume_experiment_dir / "work"
         candidate = work_dir / "yolo.yaml"
         if candidate.exists():
             self._data_yaml_path = str(candidate)
-            logger.info("Found data yaml via resume_experiment: %s", self._data_yaml_path)
+            logger.info("Found data yaml via resume_experiment_name: %s", self._data_yaml_path)
         else:
             raise FileNotFoundError(
                 f"yolo.yaml not found at {candidate}. "
-                f"Ensure prepare_data() was run in experiment '{config.resume_experiment}'."
+                f"Ensure prepare_data() was run in experiment '{config.resume_experiment_name}'."
             )

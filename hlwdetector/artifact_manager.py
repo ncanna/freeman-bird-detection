@@ -53,10 +53,12 @@ class ArtifactManager:
 
             # Validate the resume target before creating the new dir, so a bad
             # resume doesn't leave a stray empty directory behind.
+            # resume_experiment_name is the original run's dir name; resume_weights is the
+            # weights file inside it. Only the former locates the dir to stamp.
             original_dir = None
-            if config.resume_from is not None:
-                original_dir = (experiments_root / config.resume_experiment).resolve()
-                if not original_dir.exists():
+            if config.resume_experiment_name is not None:
+                original_dir = config.resume_experiment_dir
+                if not original_dir.is_dir():
                     raise FileNotFoundError(
                         f"Original experiment dir not found: {original_dir}"
                     )
@@ -274,7 +276,7 @@ class ArtifactManager:
         return result
 
     def load_config_json(self) -> dict:
-        """Load the raw config.json dict (used by ExperimentTracker for resume)."""
+        """Load this experiment dir's raw config.json dict ({} if absent)."""
         p = self.experiment_dir / "config.json"
         if not p.exists():
             return {}

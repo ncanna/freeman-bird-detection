@@ -1,0 +1,45 @@
+# RT-DETR Optuna study configuration
+model_name: rtdetr
+model_weights: rtdetr-l.pt
+metric: map50_95
+
+# Canonical data inputs shared by every trial to generate ExperimentConfigs
+coco_json: data/h23/instances_subset.json
+images_dir: data/h23/images
+split_json: data/h23/split_h23_subset.json
+output_dir: outputs
+wandb_project: bird-detection
+random_seed: 42
+
+# Optuna arguments
+study_args:  # kwargs that will be passed into optuna.create_study
+  study_name: rtdetr_hpo
+  direction: maximize
+  sampler: TPE  # Note: default n_startup_trials=10
+  pruner: median  # Ultralytics validates every epoch, so pruning has a metric to read
+  storage: ~
+optimize_args:  # kwargs that will be passed into optuna.study.optimize
+  # MedianPruner does nothing until n_startup_trials (Optuna default: 5) trials
+  # have completed, so a 4-trial study would never prune.
+  n_trials: 8
+  timeout: ~
+
+# Hyperparameter search space
+hyperparameters:
+  static:
+    epochs: 20
+    imgsz: 640
+    device: "0"
+  categorical:
+    batch: [8, 16, 32]
+    optimizer: [SGD, Adam, AdamW]
+  int:
+  float:
+    lr0:
+      - 0.00001
+      - 0.001
+      - log: True
+    lrf:  # defined as a fraction of lr0
+      - 0.01
+      - 1.0
+      - log: True

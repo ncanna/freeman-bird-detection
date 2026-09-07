@@ -33,14 +33,27 @@ class ExperimentConfig:
 
     wandb_project: str | None = None
     wandb_group: str | None = None  # groups related runs in W&B (e.g. all trials of an HPO study)
-    resume_experiment: str | None = None
-    resume_from: str | None = None  # speficies model weights to load and resume training from
+    resume_experiment_name: str | None = None  # directory NAME of the experiment being resumed
+    resume_weights: str | None = None  # path to model weights to load and resume training from
 
     visualize_split: str = "test"
     visualization_fps: float = 29.0
 
     # Fields holding filesystem paths — serialized repo-relative, resolved on load.
-    PATH_FIELDS = ("coco_json", "images_dir", "split_json", "output_dir", "resume_from")
+    # resume_experiment_name is deliberately absent: it is a directory *name*, not a path.
+    PATH_FIELDS = ("coco_json", "images_dir", "split_json", "output_dir", "resume_weights")
+
+    @property
+    def resume_experiment_dir(self) -> Path | None:
+        """Absolute dir of the experiment being resumed, or None if not resuming.
+
+        resume_experiment_name holds a bare directory name (e.g. 'swin_h23_20260805_234436');
+        the enclosing <output_dir>/experiments/ is supplied here so every caller builds
+        the path the same way.
+        """
+        if self.resume_experiment_name is None:
+            return None
+        return (Path(self.output_dir) / "experiments" / self.resume_experiment_name).resolve()
 
     @classmethod
     def from_yaml(cls, path: str) -> "ExperimentConfig":
@@ -109,17 +122,27 @@ class ExperimentConfig:
             raise FileNotFoundError(f"images_dir not found: {images_base}")
             
         # Check resume fields are both set or both unset
-        if (self.resume_from is None) != (self.resume_experiment is None):
+        if (self.resume_weights is None) != (self.resume_experiment_name is None):
             raise ValueError(
-                "resume_from and resume_experiment must both be set or both be unset; "
-                f"got resume_from={self.resume_from!r}, resume_experiment={self.resume_experiment!r}"
+                "resume_weights and resume_experiment_name must both be set or both be unset; "
+                f"got resume_weights={self.resume_weights!r}, resume_experiment_name={self.resume_experiment_name!r}"
             )
 
-        # Check resume_from path is valid
-        if self.resume_from is not None:
-            resume_from_path = Path(self.resume_from)
-            if not resume_from_path.exists():
-                raise ValueError(f"weights file not found at {resume_from_path}")
+        # resume_weights names the weights file to load
+        if self.resume_weights is not None:
+            weights_path = Path(self.resume_weights)
+            if not weights_path.is_file():
+                raise ValueError(f"resume_weights file not found at {weights_path}")
+
+        # resume_experiment_name names the original experiment dir under <output_dir>/experiments
+        if self.resume_experiment_name is not None:
+            original_dir = self.resume_experiment_dir
+            if not original_dir.is_dir():
+                raise ValueError(
+                    f"resume_experiment_name directory not found at {original_dir}. "
+                    "resume_experiment_name must be an experiment directory *name* "
+                    "(e.g. 'swin_h23_20260805_234436'), not a path to weights."
+                )
 
         # Check visualize_split is valid
         if self.visualize_split not in ("train", "val", "test"):

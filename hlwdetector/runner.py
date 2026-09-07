@@ -44,7 +44,7 @@ class ExperimentRunner:
         logger.info("Initializing ExperimentRunner with adapter %s", self.AdapterClass)
 
     def train(self):
-        if self.config.resume_from is None:
+        if self.config.resume_weights is None:
             self.adapter.prepare_data(self.dataset_manager, self.config)
 
         training_result = self.adapter.train(self.config)
