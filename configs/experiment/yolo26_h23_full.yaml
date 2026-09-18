@@ -4,12 +4,12 @@ model_weights: yolo26n.pt
 hyperparameters:
   epochs: 100
   imgsz: 640
-  batch: 32
+  batch: 16
   device: "0"
-coco_json: ../data/h23/instances_merged.json
-split_json: ../data/h23/split.json
-images_dir: ../data/h23/images
-output_dir: ../outputs
+coco_json: data/annotations/h23_coco.json
+split_json: data/splits/h23_split.json
+images_dir: data/frames/h23
+output_dir: outputs
 wandb_project: bird-detection
 #resume_experiment_name: yolo26_h23_20260414_223548
-#resume_weights: ../outputs/yolo26_h23_20260414_223548/work/runs/yolo26_h23_train/weights/last.pt
+#resume_weights: outputs/experiments/yolo26_h23_20260414_223548/work/runs/train/weights/last.pt

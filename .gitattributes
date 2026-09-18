@@ -1,0 +1,13 @@
+# Generated diagrams: never hand-merge them.
+#
+# docs/diagrams/*.svg is build output — the render-puml.yml Action re-renders it
+# from the .puml sources on every push. When two branches have each been rendered,
+# git cannot merge the XML and every merge conflicts on all three files.
+#
+# `merge=ours` keeps the current branch's copy and resolves the conflict silently;
+# the Action then overwrites it with a fresh render from the merged .puml sources,
+# which are the actual source of truth.
+#
+# Requires a one-time setup per clone (git will not run repo-supplied commands):
+#     git config merge.ours.driver true
+docs/diagrams/*.svg merge=ours -diff

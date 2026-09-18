@@ -11,8 +11,8 @@ hyperparameters:
   lr_step_size: 20
   lr_gamma: 0.1
   score_threshold: 0.5
-coco_json: data/h23/instances.json
-split_json: data/h23/split_h23.json
-images_dir: data/h23/images
+coco_json: data/annotations/h23_coco.json
+split_json: data/splits/h23_split.json
+images_dir: data/frames/h23
 output_dir: outputs
 wandb_project: bird-detection

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -18,6 +17,7 @@ from hlwdetector.adapters.base import (
     DetectionResult,
     MetricsDict,
     TrainingResult,
+    build_ultralytics_dataset,
 )
 from hlwdetector.registry import register_adapter
 
@@ -26,10 +26,6 @@ if TYPE_CHECKING:
     from hlwdetector.dataset_manager import DatasetManager
 
 logger = logging.getLogger(__name__)
-
-_PROJECT_ROOT = str(paths.REPO_ROOT)
-if _PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, _PROJECT_ROOT)
 
 
 @register_adapter("rtdetr")
@@ -68,53 +64,9 @@ class RTDETRAdapter(BaseModelAdapter):
         config: "ExperimentConfig",
     ) -> None:
         """Convert COCO annotations to YOLO format and create rtdetr.yaml."""
-        import yaml as _yaml
-        from utilities.annotation_converter import AnnotationConverter
-
-        work_path = Path(self.work_dir)
-        images_dir = Path(config.images_dir)
-
-        labels_dir = images_dir.parent / "labels"
-        labels_dir.mkdir(parents=True, exist_ok=True)
-
-        converter = AnnotationConverter(class_mapping={"bird": 0})
-
-        for split_name in ("train", "val", "test"):
-            split_view = dataset_manager.get_split(split_name)
-
-            converter.coco_to_yolo(
-                coco_json_path=split_view.coco_json_path,
-                output_dir=str(labels_dir),
-                use_filename=True,
-                video_filter=split_view.video_stems,
-            )
-
-            image_paths = split_view.image_paths
-            missing = [p for p in image_paths if not p.exists()]
-            if missing:
-                raise FileNotFoundError(
-                    f"Split '{split_name}': {len(missing)}/{len(image_paths)} image files are missing from "
-                    f"{images_dir}. Extract frames first using extract_frames_from_dir(). "
-                    f"First missing: {missing[0]}"
-                )
-            txt_path = work_path / f"{split_name}.txt"
-            txt_path.write_text(
-                "\n".join(str(p) for p in image_paths) + "\n"
-            )
-
-        yaml_data = {
-            "path": str(images_dir.parent),
-            "train": str(work_path / "train.txt"),
-            "val": str(work_path / "val.txt"),
-            "test": str(work_path / "test.txt"),
-            "nc": 1,
-            "names": {0: "bird"},
-        }
-        yaml_path = work_path / "rtdetr.yaml"
-        with open(yaml_path, "w") as f:
-            _yaml.dump(yaml_data, f, default_flow_style=False)
-
-        self._data_yaml_path = str(yaml_path)
+        self._data_yaml_path = build_ultralytics_dataset(
+            dataset_manager, config, self.work_dir, "rtdetr.yaml"
+        )
         logger.info("RT-DETR data yaml written to: %s", self._data_yaml_path)
 
     # ------------------------------------------------------------------ #

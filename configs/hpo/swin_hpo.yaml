@@ -3,9 +3,9 @@ model_name: swin
 metric: map50_95
 
 # Canonical data inputs shared by every trial to generate ExperimentConfigs
-coco_json: data/h23/instances_subset.json
-images_dir: data/h23/images
-split_json: data/h23/split_h23_subset.json
+coco_json: data/annotations/h23_coco_subset.json
+images_dir: data/frames/h23
+split_json: data/splits/h23_split_subset.json
 output_dir: outputs
 wandb_project: bird-detection
 random_seed: 42

@@ -47,16 +47,19 @@ configs/                  # YAML configurations
                           # (e.g. <model>_<dataset>_<full|subset|resume>.yaml)
   hpo/                    # Optuna HPO study configs (e.g. <model>_hpo.yaml)
 
-data/
-  h23/                    # Main dataset (extracted frames + COCO annotations)
-    images/               # Flat directory of PNG frames
-    labels/               # YOLO-format label .txt files
-    instances_merged.json       # Full COCO annotations
-    instances_subset.json       # Subset COCO annotations
-    split.json                  # Train/val/test video stem lists (full)
-    split_h23_subset.json       # Train/val/test video stem lists (subset)
-  h03/                    # H03 camera trap dataset
-  african-wildlife/       # Reference dataset
+data/                     # Organized by artifact kind, then dataset
+  frames/                 # Extracted PNG frames, one flat directory per dataset
+    h23/                  # Main dataset frames
+    h03/                  # H03 camera trap frames
+  annotations/            # COCO annotation JSON
+    h23_coco.json               # Full h23 annotations
+    h23_coco_subset.json        # Subset h23 annotations
+    h03_coco.json               # H03 annotations
+  splits/                 # Train/val/test video stem lists
+    h23_split.json              # Full
+    h23_split_subset.json       # Subset
+  videos/                 # Source camera trap videos (h23/, h03/)
+  hlw/                    # HLW reference annotations (hlw_coco.json, hlw_coco_filtered.json)
 
 outputs/
   experiments/            # Experiment results (one directory per run)
@@ -144,9 +147,9 @@ hyperparameters:
   imgsz: 640
   batch: 32
   device: "0"
-coco_json: data/h23/instances_merged.json
-split_json: data/h23/split.json
-images_dir: data/h23/images
+coco_json: data/annotations/h23_coco.json
+split_json: data/splits/h23_split.json
+images_dir: data/frames/h23
 output_dir: outputs
 wandb_project: freeman-bird-detection   # Optional
 wandb_group: null                       # Optional (set automatically for HPO trials)
@@ -169,9 +172,9 @@ Consumed by `HPOptimizer` (via `HPOConfig`). Each trial is turned into an `Exper
 model_name: yolo                  # Registered adapter name: yolo | rtdetr | swin | detr
 model_weights: yolo26n.pt         # Shared by every trial
 metric: map50_95                  # MetricsDict field to optimize: precision | recall | f1 | map50 | map50_95
-coco_json: data/h23/instances_subset.json
-images_dir: data/h23/images
-split_json: data/h23/split_h23_subset.json
+coco_json: data/annotations/h23_coco_subset.json
+images_dir: data/frames/h23
+split_json: data/splits/h23_split_subset.json
 output_dir: outputs
 wandb_project: freeman-bird-detection   # Optional (all trials share a W&B group)
 random_seed: 42
@@ -211,6 +214,34 @@ To take part in HPO pruning an adapter also sets `supports_pruning = True` and `
 calls `self.report_epoch_to_hpo(epoch, metrics)` at the end of each epoch — see **HPO Flow**.
 
 New adapters self-register via `@register_adapter("name")` and are imported through `adapters/__init__.py`.
+
+### Ultralytics Adapter Constraints (yolo, rtdetr)
+Both Ultralytics-backed adapters share one `prepare_data` implementation,
+`build_ultralytics_dataset` in `adapters/base.py`, which builds a **self-contained dataset root
+inside the experiment's `work/`**:
+
+```
+work/
+  images -> <config.images_dir>   # symlink, so 27k frames cost one inode
+  labels/                         # generated YOLO .txt files
+  train.txt val.txt test.txt      # lines: <work>/images/<file_name>
+  yolo.yaml | rtdetr.yaml         # path: <work>, absolute txt paths, nc: 1
+```
+
+**The `images` symlink is load-bearing.** Ultralytics is never told where labels live — it derives
+each label path from the image path by swapping the last `/images/` segment for `/labels/`
+(`ultralytics.data.utils.img2label_paths`). Listing frames at their real `data/frames/<dataset>/`
+location leaves nothing to swap, so every label path misses, and a missing label file is a **valid
+background image**: Ultralytics logs one warning and trains on ground truth it believes is empty,
+producing a complete run that scores ~0 mAP. Routing the paths through `work/images` makes the
+convention a property of what the adapter writes rather than of how `data/` happens to be arranged.
+
+`_verify_label_discovery` re-derives the label path for every listed image and raises if an
+annotated split resolves zero of them — the check whose absence let that failure ship silently
+through a `data/` reorganization.
+
+Building under `work/` also gives each run its own `labels.cache`. Ultralytics writes the cache
+beside the labels, so a shared label dir means full and subset runs silently overwrite each other's.
 
 ### Swin Adapter Constraints
 `swin_adapter.py` bridges timm and torchvision, which disagree on three conventions. Each is load-bearing — changing any one silently breaks training:
@@ -371,7 +402,7 @@ One Optuna gotcha, not a wiring problem: `MedianPruner` prunes nothing until `n_
 (default **5**) trials have *completed*, so a 4-trial study never prunes regardless of the metric
 stream. `_build_pruner` constructs pruners with no arguments, so this is not tunable from YAML.
 
-### Split Format (split.json)
+### Split Format (data/splits/*.json)
 ```json
 {
   "train": ["IMG_0050", "IMG_0065"],

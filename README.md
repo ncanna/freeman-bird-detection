@@ -8,7 +8,7 @@ A framework for running and comparing bird detection experiments on camera trap 
 freeman-bird-detection/
 ├── hlwdetector/          # Core experiment framework
 ├── configs/              # YAML configs — experiment/ (single runs) and hpo/ (Optuna studies)
-├── data/                 # Datasets (h03, h23)
+├── data/                 # Datasets — frames/, annotations/, splits/, videos/
 ├── outputs/              # Experiment artifacts and results
 ├── utilities/            # Data preparation and annotation conversion tools
 ├── notebooks/            # Dataset prep and tutorial notebooks
@@ -46,7 +46,7 @@ pip install -r requirements.txt
 The DETR adapter requires `transformers>=5.0`; the v5 vision API is not backward compatible with the v4 tutorials that most DETR examples online are written against.
 
 2. Ensure you have the following inputs ready:
-   - A COCO-format annotation JSON (e.g. `instances_merged.json`)
+   - A COCO-format annotation JSON (e.g. `data/annotations/h23_coco.json`)
    - A split JSON mapping split names to video stems (see format below)
    - Extracted frame images in a single flat directory (`images_dir`)
 
@@ -57,11 +57,11 @@ from utilities.video_dataset_prep_tools import extract_frames_from_dir
 
 extract_frames_from_dir(
     video_dir=Path("/path/to/videos"),
-    out_dir=Path("data/h23/images"),
+    out_dir=Path("data/frames/h23"),
 )
 ```
 
-The `split.json` file maps split names to lists of video stems. The framework filters images at runtime by matching each frame's filename prefix against the listed stems:
+The split JSON (e.g. `data/splits/h23_split.json`) maps split names to lists of video stems. The framework filters images at runtime by matching each frame's filename prefix against the listed stems:
 ```json
 {
   "train": ["video_001", "video_002"],
@@ -87,9 +87,9 @@ hyperparameters:
   batch: 32
   device: "0"
 
-coco_json: data/h23/instances_merged.json
-split_json: data/h23/split.json
-images_dir: data/h23/images
+coco_json: data/annotations/h23_coco.json
+split_json: data/splits/h23_split.json
+images_dir: data/frames/h23
 output_dir: outputs
 
 wandb_project: freeman-bird-detection
@@ -220,9 +220,9 @@ model_name: yolo
 model_weights: yolo26n.pt
 metric: map50_95                 # one of: precision, recall, f1, map50, map50_95
 
-coco_json: data/h23/instances_subset.json
-images_dir: data/h23/images
-split_json: data/h23/split_h23_subset.json
+coco_json: data/annotations/h23_coco_subset.json
+images_dir: data/frames/h23
+split_json: data/splits/h23_split_subset.json
 output_dir: outputs
 wandb_project: freeman-bird-detection
 random_seed: 42
@@ -391,7 +391,7 @@ Adapters collect detections for metrics at `eval_score_threshold` (default `0.00
 
 ### `dataset_manager.py` — Dataset Loading
 
-`DatasetManager` loads the COCO JSON and split definition, producing per-split views of the data. Images are read from a single flat `images_dir`; split membership is determined at runtime by matching each frame's filename prefix against the video stems listed in `split.json`.
+`DatasetManager` loads the COCO JSON and split definition, producing per-split views of the data. Images are read from a single flat `images_dir`; split membership is determined at runtime by matching each frame's filename prefix against the video stems listed in the split JSON.
 
 ```python
 from hlwdetector.dataset_manager import DatasetManager
@@ -449,7 +449,7 @@ Holds the `model_name → adapter class` registry. `@register_adapter(name)` reg
 - `extract_frames_from_dir(video_dir, out_dir, workers=4)` — extracts all frames from videos in a directory into a flat output directory (parallelized across `workers`)
 - `extract_single_video(...)` — extracts frames from one video
 - `compute_split_statistics(coco_json_path, bird_category_name="Bird")` — returns a per-video DataFrame of frame/bird statistics used to drive stratified splitting
-- `stratified_video_split(df, train_frac=0.70, val_frac=0.20, test_frac=0.10, random_state=42, save_dir=None)` — splits the videos in `df` (from `compute_split_statistics`) into stratified train/val/test sets, optionally writing a `split.json`
+- `stratified_video_split(df, train_frac=0.70, val_frac=0.20, test_frac=0.10, random_state=42, save_dir=None)` — splits the videos in `df` (from `compute_split_statistics`) into stratified train/val/test sets, optionally writing a split JSON (e.g. `data/splits/h23_split.json`)
 - `remove_multi_bird_frames(coco_json_path, output_path, bird_category_name="Bird")` — writes a filtered COCO JSON with multi-bird frames removed
 - `extract_frames_by_split(split_json, video_dir, out_dir)` — extracts frames organized by split
 
@@ -462,11 +462,15 @@ from utilities.annotation_converter import AnnotationConverter
 
 converter = AnnotationConverter(class_mapping={"bird": 0})
 converter.coco_to_yolo(
-    coco_json_path="data/h23/instances_merged.json",
-    output_dir="data/h23/labels",
+    coco_json_path="data/annotations/h23_coco.json",
+    output_dir="/tmp/h23_yolo_labels",
     use_filename=True,
 )
 ```
+
+The YOLO and RT-DETR adapters call this for you during `prepare_data`, writing labels into the
+experiment's own `work/labels/` alongside an `images` symlink — see **Ultralytics Adapter
+Constraints** in `CLAUDE.md` for why that layout is required.
 
 ---
 

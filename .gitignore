@@ -1,12 +1,11 @@
 *.pt
 __pycache__
 .vscode
-data/
+data/frames
+data/videos
 output/
 archive/
-output/
 slurm_and_logs/
-data
-outputs
-archive
-plans
+outputs/
+archive/
+plans/
