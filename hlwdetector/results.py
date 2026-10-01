@@ -11,9 +11,7 @@ import cycle.
 """
 
 from __future__ import annotations
-
 from dataclasses import dataclass, field
-
 import supervision as sv
 
 # Mapping from frame stem → sv.Detections

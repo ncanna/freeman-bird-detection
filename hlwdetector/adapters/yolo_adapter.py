@@ -1,4 +1,4 @@
-"""YOLOAdapter — migrated from models/yolo/yolo.ipynb."""
+"""YOLOAdapter — Implemented using Ultralytics"""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict
 
+import pandas as pd
 import supervision as sv
 from ultralytics import YOLO, settings
 
@@ -87,7 +88,7 @@ class YOLOAdapter(BaseModelAdapter):
         if config.resume_weights is None:
             self._model = YOLO(model_weights)
             self._register_epoch_callback()
-            self._model.train(
+            results = self._model.train(
                 data=self._data_yaml_path,
                 project=runs_dir,
                 name="train",
@@ -97,12 +98,15 @@ class YOLOAdapter(BaseModelAdapter):
             self._discover_data_yaml(config)
             self._model = YOLO(config.resume_weights)
             self._register_epoch_callback()
-            self._model.train(
+            results = self._model.train(
                 data=self._data_yaml_path,
                 project=runs_dir,
                 name="train",
                 **train_kwargs,
             )
+
+        print("RESULTS")
+        print(results) 
 
         run_dir = Path(self._model.trainer.save_dir)
         best_pt = run_dir / "weights" / "best.pt"
@@ -116,8 +120,12 @@ class YOLOAdapter(BaseModelAdapter):
         training_metrics: dict = {}
         if hasattr(self._model.trainer, "metrics"):
             raw = self._model.trainer.metrics
+            print("HAS METRICS")
+            print(f"TYPE: {type(self._model.trainer.metrics)}")
             if isinstance(raw, dict):
                 training_metrics = {k: float(v) for k, v in raw.items() if v is not None}
+        else:
+            print("DOES NOT HAVE METRICS")
 
         self._training_result = TrainingResult(
             run_dir=str(run_dir),
@@ -285,3 +293,9 @@ class YOLOAdapter(BaseModelAdapter):
                 f"yolo.yaml not found at {candidate}. "
                 f"Ensure prepare_data() was run in experiment '{config.resume_experiment_name}'."
             )
+
+    def _save_standardized_training_results(self) -> None:
+        save_dir = Path(self._model.trainer.save_dir)
+        results_path = save_dir / "train" / "results.csv"
+        results_df = pd.read_csv(results_path)
+        print(results_df)

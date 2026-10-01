@@ -2,7 +2,7 @@ config_name: detr_h23
 model_name: detr
 model_weights: facebook/detr-resnet-50
 hyperparameters:
-  epochs: 3
+  epochs: 10
   imgsz: 640            # short side; long side defaults to imgsz * 16/9
   batch: 4
   device: "0"
