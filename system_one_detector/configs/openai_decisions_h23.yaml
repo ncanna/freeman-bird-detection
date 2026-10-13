@@ -1,0 +1,24 @@
+# OpenAI Decisions API. Limited preview since 2026-09-29 and still gated: a
+# standard key gets HTTP 403 "Decision API is not enabled for this user", and
+# no request schema is published. Kept here so the experiment is ready when it
+# opens, not because it works today.
+#
+# For the same job on an OpenAI key right now, use gpt-6-luna with reasoning set
+# to none and a strict enum schema.
+config_name: openai_decisions_h23
+backend: openai_decisions
+modality: image
+api_key_env: OPENAI_API_KEY
+# model: unset: OpenAI names no versioned model id
+
+question_ids:
+  - bird_present
+  - bird_count
+  - largest_bird_cell
+
+coco_json: ../../data/h23/instances_subset.json
+split_json: ../../data/h23/split_h23_subset.json
+images_dir: ../../data/h23/images
+output_dir: ../../outputs
+split: test
+limit: 8

@@ -9,3 +9,7 @@ slurm_and_logs/
 outputs/
 archive/
 plans/
+
+# System One MLX proof of concept: 6.5 GB checkpoint and its venv
+/models/
+.venv-jevomni/

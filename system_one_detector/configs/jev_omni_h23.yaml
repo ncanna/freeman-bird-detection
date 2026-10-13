@@ -1,0 +1,19 @@
+# Jev-Omni sees the frame. Independent of TypeSafe. CUDA required by its loader.
+# Weights: akhilaaa3/Jev-Omni (Gemma 4 12B). One forward call per question.
+config_name: jev_omni_h23
+backend: jev_omni
+model: akhilaaa3/Jev-Omni
+modality: image
+device: cuda
+
+question_ids:
+  - bird_present
+  - bird_count
+  - largest_bird_cell
+
+coco_json: ../../data/h23/instances_subset.json
+split_json: ../../data/h23/split_h23_subset.json
+images_dir: ../../data/h23/images
+output_dir: ../../outputs
+split: test
+limit: 8

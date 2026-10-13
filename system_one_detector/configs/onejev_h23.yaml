@@ -1,0 +1,26 @@
+# Any server that speaks POST /v1/systemone. This example is OneJev's qev serve:
+#   pip install "qev[torch] @ git+https://github.com/OmniJev/OneJev.git"
+#   qev serve --model OmniJev/OneJev-27B
+# media follows OneJev's documented data-URI list plus an <image:1> placeholder.
+# Point base_url at laya-serve, Kev, Clef, or Decider and set send_media: false
+# for a text-only server. Do not send media to api.typesafe.ai.
+config_name: onejev_h23
+backend: systemone_http
+base_url: http://localhost:8000
+model: OmniJev/OneJev-27B
+modality: image
+send_media: true
+media_style: onejev
+api_key_env: ONEJEV_API_KEY
+
+question_ids:
+  - bird_present
+  - bird_count
+  - largest_bird_cell
+
+coco_json: ../../data/h23/instances_subset.json
+split_json: ../../data/h23/split_h23_subset.json
+images_dir: ../../data/h23/images
+output_dir: ../../outputs
+split: test
+limit: 8

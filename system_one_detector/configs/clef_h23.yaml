@@ -1,0 +1,22 @@
+# Cloudflare Clef. Has a vision encoder; Jev-API compatible.
+# Needs CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_AUTH_TOKEN (Workers AI access).
+# Image context only. Cloudflare's own published numbers for Clef are text
+# decision benchmarks, not vision results.
+config_name: clef_h23
+backend: clef
+model: clef          # or clef-flash
+modality: image
+account_id_env: CLOUDFLARE_ACCOUNT_ID
+auth_token_env: CLOUDFLARE_AUTH_TOKEN
+
+question_ids:
+  - bird_present
+  - bird_count
+  - largest_bird_cell
+
+coco_json: ../../data/h23/instances_subset.json
+split_json: ../../data/h23/split_h23_subset.json
+images_dir: ../../data/h23/images
+output_dir: ../../outputs
+split: test
+limit: 32

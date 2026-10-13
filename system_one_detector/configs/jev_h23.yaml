@@ -1,0 +1,19 @@
+# TypeSafe Jev. Text only — the image is not sent. This is a metadata baseline
+# unless you put a caption in extra state. Needs TYPESAFE_API_KEY.
+config_name: jev_h23
+backend: jev
+model: jev-latest
+modality: text
+api_key_env: TYPESAFE_API_KEY
+
+question_ids:
+  - bird_present
+  - bird_count
+  - largest_bird_cell
+
+coco_json: ../../data/h23/instances_subset.json
+split_json: ../../data/h23/split_h23_subset.json
+images_dir: ../../data/h23/images
+output_dir: ../../outputs
+split: test
+limit: 16

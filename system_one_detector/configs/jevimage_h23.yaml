@@ -1,0 +1,27 @@
+# jevimage. One dual-encoder pass per image, then each question is a matmul.
+# Fast and cheap when you ask many questions about the same frame, but it is an
+# embedding model, not a VLM: weak when the decision needs reasoning over the
+# scene rather than similarity.
+#
+#   pip install jevimage              # talks to a server
+#   pip install 'jevimage[local]'     # encoder runs in this process
+#
+# Set base_url to connect to a server (jevimage serve, or a hosted one). Leave
+# it empty to run the encoder locally.
+config_name: jevimage_h23
+backend: jevimage
+modality: image
+# base_url: http://127.0.0.1:8731
+# encoder: siglip2-base-224
+
+question_ids:
+  - bird_present
+  - bird_count
+  - largest_bird_cell
+
+coco_json: ../../data/h23/instances_subset.json
+split_json: ../../data/h23/split_h23_subset.json
+images_dir: ../../data/h23/images
+output_dir: ../../outputs
+split: test
+limit: 64

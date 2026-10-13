@@ -1,0 +1,21 @@
+# Local Laya. Text only. First call downloads convaiinnovations/laya.
+# model: english | multilingual | typed-decisions, or omit to let Router pick.
+# typed-decisions is a specialist for four synthetic workflows, not birds.
+config_name: laya_h23
+backend: laya
+checkpoint: convaiinnovations/laya
+use_router: true
+modality: text
+device: cpu
+
+question_ids:
+  - bird_present
+  - bird_count
+  - largest_bird_cell
+
+coco_json: ../../data/h23/instances_subset.json
+split_json: ../../data/h23/split_h23_subset.json
+images_dir: ../../data/h23/images
+output_dir: ../../outputs
+split: test
+limit: 16

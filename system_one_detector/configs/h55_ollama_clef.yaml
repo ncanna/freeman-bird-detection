@@ -1,0 +1,20 @@
+# Local multimodal decision-model run on the sampled H55 frames.
+# Start Ollama and pull the model before running. Questions are sent together
+# in one /v1/systemone request per frame.
+config_name: h55_ollama_clef
+backend: systemone_http
+model: clef
+images_dir: ../../data/H55/frames_sample5_stride10
+output_dir: ../../outputs/h55
+split: test
+question_ids:
+  - bird_present
+  - bird_count
+  - largest_bird_cell
+  - bird_behavior
+modality: image
+base_url: http://localhost:11434/v1/systemone
+send_media: true
+media_style: ollama
+api_key_env: OLLAMA_API_KEY
+timeout_s: 300
