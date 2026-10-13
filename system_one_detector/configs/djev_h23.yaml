@@ -1,0 +1,30 @@
+# Djev hosted preview. DiffusionGemma, one denoise step. Invite-only, so set
+# DJEV_API_KEY from https://djev.dev/#workbench.
+#
+# Execution is a diffusion sample. Keep seed, state, image bytes, question
+# wording, and option order fixed across runs you intend to compare.
+# isolation: joint evaluates all questions in one shared read (default and
+# cheapest). independent re-sends the state per question and costs more
+# input tokens; score_mode independent_levels requires it.
+config_name: djev_h23
+backend: djev
+model: djev
+modality: image
+api_key_env: DJEV_API_KEY
+
+seed: 0
+samples: 1
+isolation: joint
+score_mode: categorical
+
+question_ids:
+  - bird_present
+  - bird_count
+  - largest_bird_cell
+
+coco_json: ../../data/h23/instances_subset.json
+split_json: ../../data/h23/split_h23_subset.json
+images_dir: ../../data/h23/images
+output_dir: ../../outputs
+split: test
+limit: 16

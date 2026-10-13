@@ -1,0 +1,229 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1080" viewBox="0 0 1800 1080" role="img" aria-labelledby="title desc">
+<title id="title">Technical architecture for multimodal typed-decision evaluation on camera-trap video</title>
+<desc id="desc">Video frames and typed questions are assembled into a single per-frame request, routed to a local image-capable decision model, and returned as per-question probability distributions for evaluation against video-disjoint labels. Temporal inference, adaptation, and box decoding are shown as separate experimental extensions.</desc>
+<defs>
+  <marker id="arrow" markerWidth="12" markerHeight="10" refX="10" refY="5" orient="auto"><path d="M0 0L11 5L0 10Z" fill="#263b53"/></marker>
+  <marker id="arrowBlue" markerWidth="12" markerHeight="10" refX="10" refY="5" orient="auto"><path d="M0 0L11 5L0 10Z" fill="#277da1"/></marker>
+  <marker id="arrowGold" markerWidth="12" markerHeight="10" refX="10" refY="5" orient="auto"><path d="M0 0L11 5L0 10Z" fill="#bd8424"/></marker>
+  <pattern id="grid" width="14" height="14" patternUnits="userSpaceOnUse"><path d="M14 0H0V14" fill="none" stroke="#dce5ee" stroke-width="1"/></pattern>
+  <style>
+    text { font-family: Arial, Helvetica, sans-serif; fill: #172b4d; }
+    .title { font-size: 32px; font-weight: 700; letter-spacing: .1px; }
+    .subtitle { font-size: 17px; fill: #52657a; }
+    .panel-label { font-size: 14px; font-weight: 700; letter-spacing: 1.5px; fill: #52657a; }
+    .stage { font-size: 13px; font-weight: 700; letter-spacing: 1.3px; }
+    .head { font-size: 19px; font-weight: 700; }
+    .subhead { font-size: 16px; font-weight: 700; }
+    .body { font-size: 15px; fill: #334e68; }
+    .small { font-size: 13px; fill: #52657a; }
+    .tiny { font-size: 11px; fill: #627d98; }
+    .mono { font-family: Menlo, Consolas, monospace; font-size: 13px; fill: #243b53; }
+    .math { font-family: Georgia, 'Times New Roman', serif; font-size: 18px; font-style: italic; fill: #243b53; }
+    .node { stroke-width: 1.5; }
+    .solid { fill: none; stroke: #263b53; stroke-width: 2; marker-end: url(#arrow); }
+    .pixel { fill: none; stroke: #277da1; stroke-width: 2.2; marker-end: url(#arrowBlue); }
+    .schema { fill: none; stroke: #bd8424; stroke-width: 2.2; marker-end: url(#arrowGold); }
+    .future { fill: none; stroke: #7c8da3; stroke-width: 1.7; stroke-dasharray: 7 6; marker-end: url(#arrow); }
+    .rule { stroke: #cbd5e1; stroke-width: 1.2; }
+  </style>
+</defs>
+
+<rect width="1800" height="1080" fill="#ffffff"/>
+<text x="54" y="52" class="title">Multimodal decision models for camera-trap bird monitoring</text>
+<text x="54" y="82" class="subtitle">Evaluation architecture · one shared typed-question request per frame · video-disjoint measurement</text>
+<g transform="translate(1450 44)">
+  <line x1="0" y1="0" x2="44" y2="0" class="solid"/><text x="56" y="5" class="small">implemented request path</text>
+  <line x1="0" y1="26" x2="44" y2="26" class="future"/><text x="56" y="31" class="small">experimental extension</text>
+</g>
+
+<!-- The implemented, model-agnostic request and evaluation contract -->
+<rect x="42" y="112" width="1716" height="578" rx="20" fill="#fbfcfe" stroke="#c8d4e0" stroke-width="1.6"/>
+<text x="66" y="143" class="panel-label">A  /  FRAME-LEVEL INFERENCE CONTRACT</text>
+
+<!-- Stage 1: archive -->
+<g>
+  <rect x="64" y="171" width="232" height="469" rx="14" fill="#edf4fa" stroke="#abc2d8" class="node"/>
+  <circle cx="88" cy="197" r="13" fill="#476b8a"/><text x="88" y="202" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">1</text>
+  <text x="110" y="202" class="stage" fill="#476b8a">SOURCE</text>
+  <text x="84" y="237" class="head">Video archive</text>
+  <g transform="translate(88 261)">
+    <rect x="28" y="0" width="122" height="79" rx="8" fill="#d6e4f0" stroke="#7796b2" stroke-width="1.5"/>
+    <rect x="14" y="12" width="122" height="79" rx="8" fill="#e7eff6" stroke="#7796b2" stroke-width="1.5"/>
+    <rect x="0" y="24" width="122" height="79" rx="8" fill="#ffffff" stroke="#7796b2" stroke-width="1.5"/>
+    <path d="M48 44L82 63L48 82Z" fill="#6485a2"/>
+    <circle cx="16" cy="38" r="3" fill="#94adbf"/><circle cx="28" cy="38" r="3" fill="#94adbf"/>
+  </g>
+  <text x="84" y="390" class="body">Camera-trap video files</text>
+  <text x="84" y="416" class="small">H55 + additional site datasets</text>
+  <line x1="84" y1="437" x2="276" y2="437" class="rule"/>
+  <text x="84" y="466" class="stage" fill="#476b8a">PARTITION KEY</text>
+  <text x="84" y="494" class="body">video_id</text>
+  <text x="84" y="521" class="small">All frames from a clip stay</text>
+  <text x="84" y="541" class="small">in the same train / val / test</text>
+  <text x="84" y="561" class="small">partition to limit leakage.</text>
+  <rect x="84" y="588" width="184" height="30" rx="6" fill="#dce9f3"/>
+  <text x="176" y="608" text-anchor="middle" class="mono">V = {v_1, ..., v_n}</text>
+</g>
+
+<!-- Stage 2: sampling -->
+<g>
+  <rect x="326" y="171" width="258" height="469" rx="14" fill="#eef5f8" stroke="#b2cbd5" class="node"/>
+  <circle cx="350" cy="197" r="13" fill="#4c7b8c"/><text x="350" y="202" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">2</text>
+  <text x="372" y="202" class="stage" fill="#4c7b8c">TEMPORAL SAMPLING</text>
+  <text x="346" y="237" class="head">Decode &amp; sample</text>
+  <text x="346" y="266" class="mono">v_i -&gt; {I_i,t}</text>
+  <text x="346" y="294" class="small">Stride delta_t; retain source index t</text>
+  <!-- timeline / selected-frame schematic -->
+  <line x1="352" y1="348" x2="554" y2="348" stroke="#5c7c8b" stroke-width="2"/>
+  <g fill="#ffffff" stroke="#7695a3" stroke-width="1.4">
+    <rect x="348" y="319" width="34" height="54" rx="4"/><rect x="395" y="319" width="34" height="54" rx="4"/>
+    <rect x="442" y="319" width="34" height="54" rx="4"/><rect x="489" y="319" width="34" height="54" rx="4"/>
+    <rect x="536" y="319" width="34" height="54" rx="4"/>
+  </g>
+  <g fill="#72a88e"><circle cx="365" cy="346" r="5"/><circle cx="459" cy="346" r="5"/><circle cx="553" cy="346" r="5"/></g>
+  <text x="346" y="405" class="small">Selected frames preserve order;</text>
+  <text x="346" y="425" class="small">frame map links I_i,t back to v_i.</text>
+  <line x1="346" y1="447" x2="564" y2="447" class="rule"/>
+  <text x="346" y="476" class="stage" fill="#4c7b8c">PER-FRAME INPUT</text>
+  <rect x="346" y="493" width="218" height="58" rx="8" fill="#ffffff" stroke="#bfd3db"/>
+  <text x="360" y="517" class="mono">I_i,t : RGB image</text>
+  <text x="360" y="539" class="mono">s_i,t : neutral metadata</text>
+  <text x="346" y="587" class="small">No annotation-derived text</text>
+  <text x="346" y="608" class="small">is placed in the request.</text>
+</g>
+
+<!-- Stage 3: typed request / schema -->
+<g>
+  <rect x="614" y="171" width="346" height="469" rx="14" fill="#fff7e8" stroke="#dfc58f" class="node"/>
+  <circle cx="638" cy="197" r="13" fill="#a87722"/><text x="638" y="202" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">3</text>
+  <text x="660" y="202" class="stage" fill="#8a5b14">REQUEST ASSEMBLY</text>
+  <text x="634" y="237" class="head">Typed question map</text>
+  <text x="634" y="266" class="mono">Q = {q_1, q_2, ..., q_K}</text>
+  <rect x="634" y="286" width="306" height="34" rx="6" fill="#ffffff" stroke="#eadbb9"/>
+  <rect x="644" y="293" width="58" height="20" rx="4" fill="#f3e5c7"/><text x="673" y="308" text-anchor="middle" class="tiny" font-weight="700">noul</text>
+  <text x="714" y="308" class="body">bird_present</text><text x="928" y="308" class="tiny" text-anchor="end">2 outcomes</text>
+  <rect x="634" y="327" width="306" height="34" rx="6" fill="#ffffff" stroke="#eadbb9"/>
+  <rect x="644" y="334" width="58" height="20" rx="4" fill="#f3e5c7"/><text x="673" y="349" text-anchor="middle" class="tiny" font-weight="700">score</text>
+  <text x="714" y="349" class="body">bird_count</text><text x="928" y="349" class="tiny" text-anchor="end">4 levels</text>
+  <rect x="634" y="368" width="306" height="34" rx="6" fill="#ffffff" stroke="#eadbb9"/>
+  <rect x="644" y="375" width="58" height="20" rx="4" fill="#f3e5c7"/><text x="673" y="390" text-anchor="middle" class="tiny" font-weight="700">choice</text>
+  <text x="714" y="390" class="body">largest_bird_cell</text><text x="928" y="390" class="tiny" text-anchor="end">10 options</text>
+  <rect x="634" y="409" width="306" height="34" rx="6" fill="#ffffff" stroke="#eadbb9"/>
+  <rect x="644" y="416" width="58" height="20" rx="4" fill="#f3e5c7"/><text x="673" y="431" text-anchor="middle" class="tiny" font-weight="700">choice</text>
+  <text x="714" y="431" class="body">bird_behavior*</text><text x="928" y="431" class="tiny" text-anchor="end">9 options</text>
+  <line x1="634" y1="459" x2="940" y2="459" class="rule"/>
+  <text x="634" y="485" class="stage" fill="#8a5b14">WIRE ENVELOPE</text>
+  <rect x="634" y="499" width="306" height="91" rx="8" fill="#fffdf8" stroke="#eadbb9"/>
+  <text x="650" y="523" class="mono">{ state: s_i,t,</text>
+  <text x="650" y="544" class="mono">  images: [I_i,t],</text>
+  <text x="650" y="565" class="mono">  questions: Q }</text>
+  <text x="634" y="615" class="small">*Behavior remains exploratory until labeled.</text>
+</g>
+
+<!-- Stage 4: transport and model backends -->
+<g>
+  <rect x="990" y="171" width="383" height="469" rx="14" fill="#f3eff8" stroke="#c8b8dc" class="node"/>
+  <circle cx="1014" cy="197" r="13" fill="#765aa5"/><text x="1014" y="202" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">4</text>
+  <text x="1036" y="202" class="stage" fill="#654c83">LOCAL INFERENCE</text>
+  <text x="1010" y="237" class="head">Backend adapters</text>
+  <text x="1010" y="266" class="small">Common contract; implementations vary</text>
+  <rect x="1010" y="286" width="343" height="43" rx="7" fill="#ffffff" stroke="#d6c9e4"/>
+  <circle cx="1028" cy="307" r="5" fill="#765aa5"/><text x="1043" y="303" class="body" font-weight="700">Clef / Clef-Flash</text><text x="1043" y="320" class="tiny">Ollama System One · local</text>
+  <rect x="1010" y="337" width="343" height="43" rx="7" fill="#ffffff" stroke="#d6c9e4"/>
+  <circle cx="1028" cy="358" r="5" fill="#765aa5"/><text x="1043" y="354" class="body" font-weight="700">Liquid d1</text><text x="1043" y="371" class="tiny">Local runtime / adapter dependent</text>
+  <rect x="1010" y="388" width="343" height="43" rx="7" fill="#ffffff" stroke="#d6c9e4"/>
+  <circle cx="1028" cy="409" r="5" fill="#765aa5"/><text x="1043" y="405" class="body" font-weight="700">Jev-Omni</text><text x="1043" y="422" class="tiny">MLX / CUDA; current adapter calls per question</text>
+  <rect x="1010" y="439" width="343" height="43" rx="7" fill="#ffffff" stroke="#d6c9e4"/>
+  <circle cx="1028" cy="460" r="5" fill="#765aa5"/><text x="1043" y="456" class="body" font-weight="700">OneJev</text><text x="1043" y="473" class="tiny">Local compatible server</text>
+  <line x1="1010" y1="500" x2="1353" y2="500" class="rule"/>
+  <rect x="1010" y="518" width="343" height="78" rx="8" fill="#e9e1f2" stroke="#c8b8dc"/>
+  <text x="1026" y="543" class="stage" fill="#654c83">CLIENT-SIDE GUARANTEE</text>
+  <text x="1026" y="568" class="body">1 request / frame, full Q included</text>
+  <text x="1026" y="588" class="small">Not a claim of one internal model pass</text>
+  <text x="1010" y="619" class="mono">POST /v1/systemone</text>
+</g>
+
+<!-- Stage 5: typed distributions / scored outcomes -->
+<g>
+  <rect x="1403" y="171" width="331" height="469" rx="14" fill="#edf6f1" stroke="#a7cbb9" class="node"/>
+  <circle cx="1427" cy="197" r="13" fill="#43816b"/><text x="1427" y="202" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">5</text>
+  <text x="1449" y="202" class="stage" fill="#34715f">NORMALIZE &amp; MEASURE</text>
+  <text x="1423" y="237" class="head">Typed outputs</text>
+  <text x="1423" y="266" class="mono">P_i,t = {p(q_j | I_i,t)}</text>
+  <text x="1423" y="291" class="small">Per-question probability vectors</text>
+  <text x="1423" y="323" class="mono">noul:   [p_false, p_true]</text>
+  <text x="1423" y="348" class="mono">score:  [p_0, ..., p_L-1]</text>
+  <text x="1423" y="373" class="mono">choice: [p_1, ..., p_K]</text>
+  <line x1="1423" y1="394" x2="1714" y2="394" class="rule"/>
+  <text x="1423" y="422" class="stage" fill="#34715f">EVALUATE ONLY WITH GOLD</text>
+  <text x="1423" y="451" class="body">Presence · count · location</text>
+  <text x="1423" y="477" class="small">Behavior metrics require reviewed labels</text>
+  <rect x="1423" y="492" width="291" height="77" rx="8" fill="#ffffff" stroke="#b8d3c4"/>
+  <text x="1439" y="518" class="mono">metrics.json + decisions.json</text>
+  <text x="1439" y="542" class="small">answers · errors · usage · provenance</text>
+  <text x="1423" y="601" class="small">Gold: presence · boxes · behavior</text>
+  <text x="1423" y="621" class="small">Score available labels; split by video.</text>
+</g>
+
+<!-- Main data paths: image path and typed-schema path converge on request -->
+<path d="M296 350H326" class="pixel"/>
+<path d="M584 350H614" class="pixel"/>
+<path d="M960 350H990" class="schema"/>
+<path d="M1373 350H1403" class="solid"/>
+<text x="594" y="338" text-anchor="middle" class="tiny" fill="#277da1">Iᵢ,t + sᵢ,t</text>
+<text x="975" y="338" text-anchor="middle" class="tiny" fill="#bd8424">Q + media</text>
+
+<!-- Lower, clearly separate experimental pathways -->
+<rect x="42" y="718" width="1716" height="310" rx="20" fill="#ffffff" stroke="#9aaabc" stroke-width="1.6" stroke-dasharray="9 7"/>
+<text x="66" y="750" class="panel-label">B  /  EXTENSIONS FOR FOLLOW-UP EXPERIMENTS  ·  NOT PART OF THE CURRENT PER-FRAME BASELINE</text>
+
+<!-- Temporal module with explicit state and refresh path -->
+<g>
+  <rect x="66" y="778" width="526" height="216" rx="13" fill="#f5f8fb" stroke="#b8c6d6" stroke-width="1.4"/>
+  <text x="88" y="810" class="head">Temporal context / decision reuse</text>
+  <text x="88" y="841" class="mono">(I_t, p_t-1, c_t-1) -&gt; gate -&gt; p_t</text>
+  <rect x="88" y="861" width="125" height="44" rx="7" fill="#e5edf4" stroke="#b8c6d6"/>
+  <text x="150" y="888" text-anchor="middle" class="small">new frame I_t</text>
+  <path d="M213 883H246" class="solid"/>
+  <rect x="249" y="861" width="139" height="44" rx="7" fill="#e5edf4" stroke="#b8c6d6"/>
+  <text x="318" y="879" text-anchor="middle" class="tiny">scene-change /</text><text x="318" y="896" text-anchor="middle" class="tiny">max-age gate</text>
+  <path d="M388 883H421" class="solid"/>
+  <rect x="424" y="861" width="145" height="44" rx="7" fill="#e5edf4" stroke="#b8c6d6"/>
+  <text x="496" y="879" text-anchor="middle" class="tiny">infer or reuse</text><text x="496" y="896" text-anchor="middle" class="tiny">cached decision</text>
+  <text x="88" y="938" class="small">Compare with every-frame inference; measure recall loss and</text>
+  <text x="88" y="960" class="small">latency saved. Never forward-fill scores without validation.</text>
+</g>
+
+<!-- Fine tuning module -->
+<g>
+  <rect x="637" y="778" width="526" height="216" rx="13" fill="#f5f8fb" stroke="#b8c6d6" stroke-width="1.4"/>
+  <text x="659" y="810" class="head">Calibration / model adaptation</text>
+  <rect x="659" y="835" width="142" height="58" rx="7" fill="#ffffff" stroke="#c5d0dc"/>
+  <text x="730" y="859" text-anchor="middle" class="tiny">gold train videos</text><text x="730" y="878" text-anchor="middle" class="tiny">(labels + media)</text>
+  <path d="M801 864H831" class="solid"/>
+  <rect x="834" y="835" width="151" height="58" rx="7" fill="#ffffff" stroke="#c5d0dc"/>
+  <text x="909" y="859" text-anchor="middle" class="tiny">temperature / bias</text><text x="909" y="878" text-anchor="middle" class="tiny">or head / LoRA</text>
+  <path d="M985 864H1015" class="solid"/>
+  <rect x="1018" y="835" width="121" height="58" rx="7" fill="#e9e2f1" stroke="#c9b9dc"/>
+  <text x="1078" y="859" text-anchor="middle" class="tiny">adapted θ′</text><text x="1078" y="878" text-anchor="middle" class="tiny">candidate</text>
+  <text x="659" y="930" class="small">Select on validation videos; freeze the test partition.</text>
+  <text x="659" y="956" class="small">Retain frozen-backbone results as the primary baseline.</text>
+</g>
+
+<!-- Box output extension -->
+<g>
+  <rect x="1208" y="778" width="526" height="216" rx="13" fill="#f5f8fb" stroke="#b8c6d6" stroke-width="1.4"/>
+  <text x="1230" y="810" class="head">Optional box-output pathway</text>
+  <rect x="1230" y="835" width="158" height="58" rx="7" fill="#ffffff" stroke="#c5d0dc"/>
+  <text x="1309" y="859" text-anchor="middle" class="tiny">box-capable model</text><text x="1309" y="878" text-anchor="middle" class="tiny">(e.g., PBD system)</text>
+  <path d="M1388 864H1420" class="solid"/>
+  <rect x="1423" y="835" width="122" height="58" rx="7" fill="#ffffff" stroke="#c5d0dc"/>
+  <text x="1484" y="859" text-anchor="middle" class="mono">(x_1,y_1,</text><text x="1484" y="879" text-anchor="middle" class="mono">x_2,y_2)</text>
+  <path d="M1545 864H1577" class="solid"/>
+  <rect x="1580" y="835" width="126" height="58" rx="7" fill="#e6eef4" stroke="#bdcad7"/>
+  <text x="1643" y="859" text-anchor="middle" class="tiny">IoU / AP</text><text x="1643" y="878" text-anchor="middle" class="tiny">vs. gold boxes</text>
+  <text x="1230" y="930" class="small">The current 3 × 3 cell answer is coarse localization,</text>
+  <text x="1230" y="956" class="small">not a predicted box. PBD concerns coordinate decoding.</text>
+</g>
+
+</svg>

@@ -1,0 +1,20 @@
+# System One experiment on the H55 video sample.
+# See system_one_detector/h55_experiment/README.md for the full write-up.
+#
+# The frames were produced by system_one_detector.tools.sample_videos (5 videos,
+# seed 42) and system_one_detector.tools.video_to_frames (stride 10). There are
+# no gold COCO labels for H55, so this config is for *runs*: dry-run plumbing
+# checks and any backend you point it at. Metrics against gold labels are not
+# defined here.
+config_name: h55_sample
+backend: mock                # --dry-run forces this anyway; swap for a real backend
+model: null
+coco_json: null              # no gold labels for H55
+split_json: null             # the frames dir already contains only the sample
+images_dir: ../../data/H55/frames_sample5_stride10
+output_dir: ../../outputs/h55
+split: test                  # the harness requires train/val/test; 'test' only
+limit: null
+question_ids: [bird_present, bird_count, largest_bird_cell, bird_behavior]
+modality: image
+noul_threshold: 0.5

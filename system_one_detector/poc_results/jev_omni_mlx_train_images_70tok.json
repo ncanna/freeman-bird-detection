@@ -1,0 +1,865 @@
+{
+  "meta": {
+    "model_dir": "/Users/saityada/Desktop/coding/OMSCS/HAAG/freeman-bird-detection/models/Jev-Omni-MLX-4bit",
+    "image_tokens": 70,
+    "calibration": "calibration.json",
+    "load_ms": 4596.6,
+    "peak_metal_gb": 7.2,
+    "median_latency_ms": 1749.2
+  },
+  "summary": {
+    "frames": 11,
+    "errors": 0,
+    "per_question": {
+      "bird_present": {
+        "n": 11,
+        "type": "noul",
+        "mean_confidence": 0.9031,
+        "median_confidence": 0.911,
+        "median_ms": 1730.1,
+        "predictions": {
+          "No bird is visible": 11
+        },
+        "confidence_histogram": {
+          "0.0-0.2": 0,
+          "0.2-0.4": 0,
+          "0.4-0.6": 0,
+          "0.6-0.8": 0,
+          "0.8-1.0": 11
+        }
+      },
+      "bird_count": {
+        "n": 11,
+        "type": "score",
+        "mean_confidence": 0.8571,
+        "median_confidence": 0.8575,
+        "median_ms": 1742.5,
+        "predictions": {
+          "no birds are visible": 11
+        },
+        "confidence_histogram": {
+          "0.0-0.2": 0,
+          "0.2-0.4": 0,
+          "0.4-0.6": 0,
+          "0.6-0.8": 0,
+          "0.8-1.0": 11
+        }
+      },
+      "largest_bird_cell": {
+        "n": 11,
+        "type": "choice",
+        "mean_confidence": 0.2222,
+        "median_confidence": 0.2106,
+        "median_ms": 2311.9,
+        "predictions": {
+          "middle-right of the frame": 7,
+          "center of the frame": 2,
+          "top-left of the frame": 2
+        },
+        "confidence_histogram": {
+          "0.0-0.2": 1,
+          "0.2-0.4": 10,
+          "0.4-0.6": 0,
+          "0.6-0.8": 0,
+          "0.8-1.0": 0
+        }
+      }
+    },
+    "median_latency_ms": 1749.2,
+    "wall_seconds": 63.6
+  },
+  "frames": [
+    {
+      "file_name": "IMG_0595_frame_00000.jpg",
+      "decisions": [
+        {
+          "question_id": "bird_present",
+          "type": "noul",
+          "question": "Is a bird, or part of a bird, visible anywhere in this frame, including partly hidden by vegetation?",
+          "options": [
+            "No bird is visible",
+            "At least one bird is visible"
+          ],
+          "prediction": "No bird is visible",
+          "confidence": 0.9089,
+          "probabilities": {
+            "No bird is visible": 0.9089,
+            "At least one bird is visible": 0.0911
+          },
+          "elapsed_ms": 1985.1
+        },
+        {
+          "question_id": "bird_count",
+          "type": "score",
+          "question": "How many birds are visible in this frame?",
+          "options": [
+            "no birds are visible",
+            "exactly one bird is visible",
+            "a few birds are visible (2 or 3)",
+            "many birds are visible (4 or more)"
+          ],
+          "prediction": "no birds are visible",
+          "confidence": 0.8559,
+          "probabilities": {
+            "no birds are visible": 0.8559,
+            "exactly one bird is visible": 0.029,
+            "a few birds are visible (2 or 3)": 0.0363,
+            "many birds are visible (4 or more)": 0.0788
+          },
+          "elapsed_ms": 1744.3
+        },
+        {
+          "question_id": "largest_bird_cell",
+          "type": "choice",
+          "question": "Where is the center of the largest visible bird?",
+          "options": [
+            "top-left of the frame",
+            "top-center of the frame",
+            "top-right of the frame",
+            "middle-left of the frame",
+            "center of the frame",
+            "middle-right of the frame",
+            "bottom-left of the frame",
+            "bottom-center of the frame",
+            "bottom-right of the frame"
+          ],
+          "prediction": "middle-right of the frame",
+          "confidence": 0.2214,
+          "probabilities": {
+            "top-left of the frame": 0.1673,
+            "top-center of the frame": 0.076,
+            "top-right of the frame": 0.0355,
+            "middle-left of the frame": 0.1584,
+            "center of the frame": 0.2013,
+            "middle-right of the frame": 0.2214,
+            "bottom-left of the frame": 0.0223,
+            "bottom-center of the frame": 0.0645,
+            "bottom-right of the frame": 0.0533
+          },
+          "elapsed_ms": 2311.9
+        }
+      ],
+      "error": null
+    },
+    {
+      "file_name": "IMG_0595_frame_00001.jpg",
+      "decisions": [
+        {
+          "question_id": "bird_present",
+          "type": "noul",
+          "question": "Is a bird, or part of a bird, visible anywhere in this frame, including partly hidden by vegetation?",
+          "options": [
+            "No bird is visible",
+            "At least one bird is visible"
+          ],
+          "prediction": "No bird is visible",
+          "confidence": 0.9142,
+          "probabilities": {
+            "No bird is visible": 0.9142,
+            "At least one bird is visible": 0.0858
+          },
+          "elapsed_ms": 1712.4
+        },
+        {
+          "question_id": "bird_count",
+          "type": "score",
+          "question": "How many birds are visible in this frame?",
+          "options": [
+            "no birds are visible",
+            "exactly one bird is visible",
+            "a few birds are visible (2 or 3)",
+            "many birds are visible (4 or more)"
+          ],
+          "prediction": "no birds are visible",
+          "confidence": 0.8442,
+          "probabilities": {
+            "no birds are visible": 0.8442,
+            "exactly one bird is visible": 0.0312,
+            "a few birds are visible (2 or 3)": 0.0359,
+            "many birds are visible (4 or more)": 0.0887
+          },
+          "elapsed_ms": 1706.1
+        },
+        {
+          "question_id": "largest_bird_cell",
+          "type": "choice",
+          "question": "Where is the center of the largest visible bird?",
+          "options": [
+            "top-left of the frame",
+            "top-center of the frame",
+            "top-right of the frame",
+            "middle-left of the frame",
+            "center of the frame",
+            "middle-right of the frame",
+            "bottom-left of the frame",
+            "bottom-center of the frame",
+            "bottom-right of the frame"
+          ],
+          "prediction": "middle-right of the frame",
+          "confidence": 0.2099,
+          "probabilities": {
+            "top-left of the frame": 0.1816,
+            "top-center of the frame": 0.0819,
+            "top-right of the frame": 0.0426,
+            "middle-left of the frame": 0.1497,
+            "center of the frame": 0.1914,
+            "middle-right of the frame": 0.2099,
+            "bottom-left of the frame": 0.0239,
+            "bottom-center of the frame": 0.0652,
+            "bottom-right of the frame": 0.0536
+          },
+          "elapsed_ms": 2255.0
+        }
+      ],
+      "error": null
+    },
+    {
+      "file_name": "IMG_0595_frame_00002.jpg",
+      "decisions": [
+        {
+          "question_id": "bird_present",
+          "type": "noul",
+          "question": "Is a bird, or part of a bird, visible anywhere in this frame, including partly hidden by vegetation?",
+          "options": [
+            "No bird is visible",
+            "At least one bird is visible"
+          ],
+          "prediction": "No bird is visible",
+          "confidence": 0.91,
+          "probabilities": {
+            "No bird is visible": 0.91,
+            "At least one bird is visible": 0.09
+          },
+          "elapsed_ms": 1684.8
+        },
+        {
+          "question_id": "bird_count",
+          "type": "score",
+          "question": "How many birds are visible in this frame?",
+          "options": [
+            "no birds are visible",
+            "exactly one bird is visible",
+            "a few birds are visible (2 or 3)",
+            "many birds are visible (4 or more)"
+          ],
+          "prediction": "no birds are visible",
+          "confidence": 0.854,
+          "probabilities": {
+            "no birds are visible": 0.854,
+            "exactly one bird is visible": 0.0273,
+            "a few birds are visible (2 or 3)": 0.0341,
+            "many birds are visible (4 or more)": 0.0847
+          },
+          "elapsed_ms": 1721.0
+        },
+        {
+          "question_id": "largest_bird_cell",
+          "type": "choice",
+          "question": "Where is the center of the largest visible bird?",
+          "options": [
+            "top-left of the frame",
+            "top-center of the frame",
+            "top-right of the frame",
+            "middle-left of the frame",
+            "center of the frame",
+            "middle-right of the frame",
+            "bottom-left of the frame",
+            "bottom-center of the frame",
+            "bottom-right of the frame"
+          ],
+          "prediction": "middle-right of the frame",
+          "confidence": 0.2281,
+          "probabilities": {
+            "top-left of the frame": 0.1755,
+            "top-center of the frame": 0.084,
+            "top-right of the frame": 0.0318,
+            "middle-left of the frame": 0.1675,
+            "center of the frame": 0.1686,
+            "middle-right of the frame": 0.2281,
+            "bottom-left of the frame": 0.0272,
+            "bottom-center of the frame": 0.0597,
+            "bottom-right of the frame": 0.0575
+          },
+          "elapsed_ms": 2212.2
+        }
+      ],
+      "error": null
+    },
+    {
+      "file_name": "IMG_0595_frame_00003.jpg",
+      "decisions": [
+        {
+          "question_id": "bird_present",
+          "type": "noul",
+          "question": "Is a bird, or part of a bird, visible anywhere in this frame, including partly hidden by vegetation?",
+          "options": [
+            "No bird is visible",
+            "At least one bird is visible"
+          ],
+          "prediction": "No bird is visible",
+          "confidence": 0.9133,
+          "probabilities": {
+            "No bird is visible": 0.9133,
+            "At least one bird is visible": 0.0867
+          },
+          "elapsed_ms": 1731.0
+        },
+        {
+          "question_id": "bird_count",
+          "type": "score",
+          "question": "How many birds are visible in this frame?",
+          "options": [
+            "no birds are visible",
+            "exactly one bird is visible",
+            "a few birds are visible (2 or 3)",
+            "many birds are visible (4 or more)"
+          ],
+          "prediction": "no birds are visible",
+          "confidence": 0.8402,
+          "probabilities": {
+            "no birds are visible": 0.8402,
+            "exactly one bird is visible": 0.0341,
+            "a few birds are visible (2 or 3)": 0.0406,
+            "many birds are visible (4 or more)": 0.0851
+          },
+          "elapsed_ms": 1768.5
+        },
+        {
+          "question_id": "largest_bird_cell",
+          "type": "choice",
+          "question": "Where is the center of the largest visible bird?",
+          "options": [
+            "top-left of the frame",
+            "top-center of the frame",
+            "top-right of the frame",
+            "middle-left of the frame",
+            "center of the frame",
+            "middle-right of the frame",
+            "bottom-left of the frame",
+            "bottom-center of the frame",
+            "bottom-right of the frame"
+          ],
+          "prediction": "center of the frame",
+          "confidence": 0.236,
+          "probabilities": {
+            "top-left of the frame": 0.1852,
+            "top-center of the frame": 0.1186,
+            "top-right of the frame": 0.0428,
+            "middle-left of the frame": 0.1237,
+            "center of the frame": 0.236,
+            "middle-right of the frame": 0.1799,
+            "bottom-left of the frame": 0.0179,
+            "bottom-center of the frame": 0.0532,
+            "bottom-right of the frame": 0.0426
+          },
+          "elapsed_ms": 2339.9
+        }
+      ],
+      "error": null
+    },
+    {
+      "file_name": "IMG_0595_frame_00004.jpg",
+      "decisions": [
+        {
+          "question_id": "bird_present",
+          "type": "noul",
+          "question": "Is a bird, or part of a bird, visible anywhere in this frame, including partly hidden by vegetation?",
+          "options": [
+            "No bird is visible",
+            "At least one bird is visible"
+          ],
+          "prediction": "No bird is visible",
+          "confidence": 0.9152,
+          "probabilities": {
+            "No bird is visible": 0.9152,
+            "At least one bird is visible": 0.0848
+          },
+          "elapsed_ms": 1713.4
+        },
+        {
+          "question_id": "bird_count",
+          "type": "score",
+          "question": "How many birds are visible in this frame?",
+          "options": [
+            "no birds are visible",
+            "exactly one bird is visible",
+            "a few birds are visible (2 or 3)",
+            "many birds are visible (4 or more)"
+          ],
+          "prediction": "no birds are visible",
+          "confidence": 0.8699,
+          "probabilities": {
+            "no birds are visible": 0.8699,
+            "exactly one bird is visible": 0.0262,
+            "a few birds are visible (2 or 3)": 0.033,
+            "many birds are visible (4 or more)": 0.071
+          },
+          "elapsed_ms": 1742.5
+        },
+        {
+          "question_id": "largest_bird_cell",
+          "type": "choice",
+          "question": "Where is the center of the largest visible bird?",
+          "options": [
+            "top-left of the frame",
+            "top-center of the frame",
+            "top-right of the frame",
+            "middle-left of the frame",
+            "center of the frame",
+            "middle-right of the frame",
+            "bottom-left of the frame",
+            "bottom-center of the frame",
+            "bottom-right of the frame"
+          ],
+          "prediction": "middle-right of the frame",
+          "confidence": 0.2064,
+          "probabilities": {
+            "top-left of the frame": 0.1844,
+            "top-center of the frame": 0.1019,
+            "top-right of the frame": 0.0386,
+            "middle-left of the frame": 0.1519,
+            "center of the frame": 0.1853,
+            "middle-right of the frame": 0.2064,
+            "bottom-left of the frame": 0.0206,
+            "bottom-center of the frame": 0.0598,
+            "bottom-right of the frame": 0.0512
+          },
+          "elapsed_ms": 2291.9
+        }
+      ],
+      "error": null
+    },
+    {
+      "file_name": "IMG_0595_frame_00005.jpg",
+      "decisions": [
+        {
+          "question_id": "bird_present",
+          "type": "noul",
+          "question": "Is a bird, or part of a bird, visible anywhere in this frame, including partly hidden by vegetation?",
+          "options": [
+            "No bird is visible",
+            "At least one bird is visible"
+          ],
+          "prediction": "No bird is visible",
+          "confidence": 0.911,
+          "probabilities": {
+            "No bird is visible": 0.911,
+            "At least one bird is visible": 0.089
+          },
+          "elapsed_ms": 1749.2
+        },
+        {
+          "question_id": "bird_count",
+          "type": "score",
+          "question": "How many birds are visible in this frame?",
+          "options": [
+            "no birds are visible",
+            "exactly one bird is visible",
+            "a few birds are visible (2 or 3)",
+            "many birds are visible (4 or more)"
+          ],
+          "prediction": "no birds are visible",
+          "confidence": 0.8584,
+          "probabilities": {
+            "no birds are visible": 0.8584,
+            "exactly one bird is visible": 0.027,
+            "a few birds are visible (2 or 3)": 0.034,
+            "many birds are visible (4 or more)": 0.0806
+          },
+          "elapsed_ms": 1775.8
+        },
+        {
+          "question_id": "largest_bird_cell",
+          "type": "choice",
+          "question": "Where is the center of the largest visible bird?",
+          "options": [
+            "top-left of the frame",
+            "top-center of the frame",
+            "top-right of the frame",
+            "middle-left of the frame",
+            "center of the frame",
+            "middle-right of the frame",
+            "bottom-left of the frame",
+            "bottom-center of the frame",
+            "bottom-right of the frame"
+          ],
+          "prediction": "top-left of the frame",
+          "confidence": 0.2051,
+          "probabilities": {
+            "top-left of the frame": 0.2051,
+            "top-center of the frame": 0.1206,
+            "top-right of the frame": 0.0452,
+            "middle-left of the frame": 0.1422,
+            "center of the frame": 0.1902,
+            "middle-right of the frame": 0.1702,
+            "bottom-left of the frame": 0.0199,
+            "bottom-center of the frame": 0.0577,
+            "bottom-right of the frame": 0.0489
+          },
+          "elapsed_ms": 2322.4
+        }
+      ],
+      "error": null
+    },
+    {
+      "file_name": "IMG_0595_frame_00006.jpg",
+      "decisions": [
+        {
+          "question_id": "bird_present",
+          "type": "noul",
+          "question": "Is a bird, or part of a bird, visible anywhere in this frame, including partly hidden by vegetation?",
+          "options": [
+            "No bird is visible",
+            "At least one bird is visible"
+          ],
+          "prediction": "No bird is visible",
+          "confidence": 0.9059,
+          "probabilities": {
+            "No bird is visible": 0.9059,
+            "At least one bird is visible": 0.0941
+          },
+          "elapsed_ms": 1719.3
+        },
+        {
+          "question_id": "bird_count",
+          "type": "score",
+          "question": "How many birds are visible in this frame?",
+          "options": [
+            "no birds are visible",
+            "exactly one bird is visible",
+            "a few birds are visible (2 or 3)",
+            "many birds are visible (4 or more)"
+          ],
+          "prediction": "no birds are visible",
+          "confidence": 0.8433,
+          "probabilities": {
+            "no birds are visible": 0.8433,
+            "exactly one bird is visible": 0.0309,
+            "a few birds are visible (2 or 3)": 0.0385,
+            "many birds are visible (4 or more)": 0.0874
+          },
+          "elapsed_ms": 1726.1
+        },
+        {
+          "question_id": "largest_bird_cell",
+          "type": "choice",
+          "question": "Where is the center of the largest visible bird?",
+          "options": [
+            "top-left of the frame",
+            "top-center of the frame",
+            "top-right of the frame",
+            "middle-left of the frame",
+            "center of the frame",
+            "middle-right of the frame",
+            "bottom-left of the frame",
+            "bottom-center of the frame",
+            "bottom-right of the frame"
+          ],
+          "prediction": "middle-right of the frame",
+          "confidence": 0.2106,
+          "probabilities": {
+            "top-left of the frame": 0.1869,
+            "top-center of the frame": 0.0877,
+            "top-right of the frame": 0.0401,
+            "middle-left of the frame": 0.1496,
+            "center of the frame": 0.1855,
+            "middle-right of the frame": 0.2106,
+            "bottom-left of the frame": 0.0224,
+            "bottom-center of the frame": 0.0641,
+            "bottom-right of the frame": 0.0531
+          },
+          "elapsed_ms": 2417.7
+        }
+      ],
+      "error": null
+    },
+    {
+      "file_name": "IMG_0595_frame_00007.jpg",
+      "decisions": [
+        {
+          "question_id": "bird_present",
+          "type": "noul",
+          "question": "Is a bird, or part of a bird, visible anywhere in this frame, including partly hidden by vegetation?",
+          "options": [
+            "No bird is visible",
+            "At least one bird is visible"
+          ],
+          "prediction": "No bird is visible",
+          "confidence": 0.9116,
+          "probabilities": {
+            "No bird is visible": 0.9116,
+            "At least one bird is visible": 0.0884
+          },
+          "elapsed_ms": 1730.1
+        },
+        {
+          "question_id": "bird_count",
+          "type": "score",
+          "question": "How many birds are visible in this frame?",
+          "options": [
+            "no birds are visible",
+            "exactly one bird is visible",
+            "a few birds are visible (2 or 3)",
+            "many birds are visible (4 or more)"
+          ],
+          "prediction": "no birds are visible",
+          "confidence": 0.865,
+          "probabilities": {
+            "no birds are visible": 0.865,
+            "exactly one bird is visible": 0.0247,
+            "a few birds are visible (2 or 3)": 0.0305,
+            "many birds are visible (4 or more)": 0.0798
+          },
+          "elapsed_ms": 1641.4
+        },
+        {
+          "question_id": "largest_bird_cell",
+          "type": "choice",
+          "question": "Where is the center of the largest visible bird?",
+          "options": [
+            "top-left of the frame",
+            "top-center of the frame",
+            "top-right of the frame",
+            "middle-left of the frame",
+            "center of the frame",
+            "middle-right of the frame",
+            "bottom-left of the frame",
+            "bottom-center of the frame",
+            "bottom-right of the frame"
+          ],
+          "prediction": "middle-right of the frame",
+          "confidence": 0.2068,
+          "probabilities": {
+            "top-left of the frame": 0.1762,
+            "top-center of the frame": 0.0919,
+            "top-right of the frame": 0.0423,
+            "middle-left of the frame": 0.1443,
+            "center of the frame": 0.1842,
+            "middle-right of the frame": 0.2068,
+            "bottom-left of the frame": 0.022,
+            "bottom-center of the frame": 0.0754,
+            "bottom-right of the frame": 0.0571
+          },
+          "elapsed_ms": 2324.8
+        }
+      ],
+      "error": null
+    },
+    {
+      "file_name": "IMG_0595_frame_00008.jpg",
+      "decisions": [
+        {
+          "question_id": "bird_present",
+          "type": "noul",
+          "question": "Is a bird, or part of a bird, visible anywhere in this frame, including partly hidden by vegetation?",
+          "options": [
+            "No bird is visible",
+            "At least one bird is visible"
+          ],
+          "prediction": "No bird is visible",
+          "confidence": 0.8201,
+          "probabilities": {
+            "No bird is visible": 0.8201,
+            "At least one bird is visible": 0.1799
+          },
+          "elapsed_ms": 1696.8
+        },
+        {
+          "question_id": "bird_count",
+          "type": "score",
+          "question": "How many birds are visible in this frame?",
+          "options": [
+            "no birds are visible",
+            "exactly one bird is visible",
+            "a few birds are visible (2 or 3)",
+            "many birds are visible (4 or more)"
+          ],
+          "prediction": "no birds are visible",
+          "confidence": 0.8779,
+          "probabilities": {
+            "no birds are visible": 0.8779,
+            "exactly one bird is visible": 0.0578,
+            "a few birds are visible (2 or 3)": 0.0128,
+            "many birds are visible (4 or more)": 0.0516
+          },
+          "elapsed_ms": 1707.1
+        },
+        {
+          "question_id": "largest_bird_cell",
+          "type": "choice",
+          "question": "Where is the center of the largest visible bird?",
+          "options": [
+            "top-left of the frame",
+            "top-center of the frame",
+            "top-right of the frame",
+            "middle-left of the frame",
+            "center of the frame",
+            "middle-right of the frame",
+            "bottom-left of the frame",
+            "bottom-center of the frame",
+            "bottom-right of the frame"
+          ],
+          "prediction": "top-left of the frame",
+          "confidence": 0.3008,
+          "probabilities": {
+            "top-left of the frame": 0.3008,
+            "top-center of the frame": 0.0933,
+            "top-right of the frame": 0.0504,
+            "middle-left of the frame": 0.0558,
+            "center of the frame": 0.2587,
+            "middle-right of the frame": 0.0996,
+            "bottom-left of the frame": 0.0226,
+            "bottom-center of the frame": 0.0738,
+            "bottom-right of the frame": 0.045
+          },
+          "elapsed_ms": 2267.9
+        }
+      ],
+      "error": null
+    },
+    {
+      "file_name": "IMG_0595_frame_00009.jpg",
+      "decisions": [
+        {
+          "question_id": "bird_present",
+          "type": "noul",
+          "question": "Is a bird, or part of a bird, visible anywhere in this frame, including partly hidden by vegetation?",
+          "options": [
+            "No bird is visible",
+            "At least one bird is visible"
+          ],
+          "prediction": "No bird is visible",
+          "confidence": 0.9153,
+          "probabilities": {
+            "No bird is visible": 0.9153,
+            "At least one bird is visible": 0.0847
+          },
+          "elapsed_ms": 1742.6
+        },
+        {
+          "question_id": "bird_count",
+          "type": "score",
+          "question": "How many birds are visible in this frame?",
+          "options": [
+            "no birds are visible",
+            "exactly one bird is visible",
+            "a few birds are visible (2 or 3)",
+            "many birds are visible (4 or more)"
+          ],
+          "prediction": "no birds are visible",
+          "confidence": 0.8622,
+          "probabilities": {
+            "no birds are visible": 0.8622,
+            "exactly one bird is visible": 0.0263,
+            "a few birds are visible (2 or 3)": 0.0308,
+            "many birds are visible (4 or more)": 0.0807
+          },
+          "elapsed_ms": 1745.4
+        },
+        {
+          "question_id": "largest_bird_cell",
+          "type": "choice",
+          "question": "Where is the center of the largest visible bird?",
+          "options": [
+            "top-left of the frame",
+            "top-center of the frame",
+            "top-right of the frame",
+            "middle-left of the frame",
+            "center of the frame",
+            "middle-right of the frame",
+            "bottom-left of the frame",
+            "bottom-center of the frame",
+            "bottom-right of the frame"
+          ],
+          "prediction": "middle-right of the frame",
+          "confidence": 0.1981,
+          "probabilities": {
+            "top-left of the frame": 0.1742,
+            "top-center of the frame": 0.1034,
+            "top-right of the frame": 0.0376,
+            "middle-left of the frame": 0.1551,
+            "center of the frame": 0.196,
+            "middle-right of the frame": 0.1981,
+            "bottom-left of the frame": 0.0218,
+            "bottom-center of the frame": 0.0623,
+            "bottom-right of the frame": 0.0515
+          },
+          "elapsed_ms": 2203.6
+        }
+      ],
+      "error": null
+    },
+    {
+      "file_name": "IMG_0595_frame_00010.jpg",
+      "decisions": [
+        {
+          "question_id": "bird_present",
+          "type": "noul",
+          "question": "Is a bird, or part of a bird, visible anywhere in this frame, including partly hidden by vegetation?",
+          "options": [
+            "No bird is visible",
+            "At least one bird is visible"
+          ],
+          "prediction": "No bird is visible",
+          "confidence": 0.909,
+          "probabilities": {
+            "No bird is visible": 0.909,
+            "At least one bird is visible": 0.091
+          },
+          "elapsed_ms": 1763.0
+        },
+        {
+          "question_id": "bird_count",
+          "type": "score",
+          "question": "How many birds are visible in this frame?",
+          "options": [
+            "no birds are visible",
+            "exactly one bird is visible",
+            "a few birds are visible (2 or 3)",
+            "many birds are visible (4 or more)"
+          ],
+          "prediction": "no birds are visible",
+          "confidence": 0.8575,
+          "probabilities": {
+            "no birds are visible": 0.8575,
+            "exactly one bird is visible": 0.0286,
+            "a few birds are visible (2 or 3)": 0.0359,
+            "many birds are visible (4 or more)": 0.078
+          },
+          "elapsed_ms": 1765.8
+        },
+        {
+          "question_id": "largest_bird_cell",
+          "type": "choice",
+          "question": "Where is the center of the largest visible bird?",
+          "options": [
+            "top-left of the frame",
+            "top-center of the frame",
+            "top-right of the frame",
+            "middle-left of the frame",
+            "center of the frame",
+            "middle-right of the frame",
+            "bottom-left of the frame",
+            "bottom-center of the frame",
+            "bottom-right of the frame"
+          ],
+          "prediction": "center of the frame",
+          "confidence": 0.2206,
+          "probabilities": {
+            "top-left of the frame": 0.1878,
+            "top-center of the frame": 0.1229,
+            "top-right of the frame": 0.0469,
+            "middle-left of the frame": 0.1342,
+            "center of the frame": 0.2206,
+            "middle-right of the frame": 0.1688,
+            "bottom-left of the frame": 0.0185,
+            "bottom-center of the frame": 0.0571,
+            "bottom-right of the frame": 0.0433
+          },
+          "elapsed_ms": 2341.0
+        }
+      ],
+      "error": null
+    }
+  ]
+}

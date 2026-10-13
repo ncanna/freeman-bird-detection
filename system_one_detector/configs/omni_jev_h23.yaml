@@ -1,0 +1,29 @@
+# OmniJev v1.1 from tinnel123666888. A 4B Qwen3.5 LoRA with decision heads.
+# NOT OmniJev/OneJev-27B. Weights need a local clone:
+#
+#   git clone https://github.com/tinnel123666888/OmniJev
+#   cd OmniJev && pip install -r requirements.txt
+#   hf download tinnel123/OmniJev --revision v1.1 --local-dir ckpt
+#   hf download Qwen/Qwen3.5-4B --local-dir base
+#
+# The 4B checkpoint carries a noul bias (~0.053) that moves the yes/no
+# boundary. Leave noul_bias empty to read it from release_manifest.json.
+config_name: omni_jev_h23
+backend: omni_jev
+modality: image
+
+adapter_dir: ../../third_party/OmniJev/ckpt
+base_model_dir: ../../third_party/OmniJev/base
+# noul_bias: 0.0531085661
+
+question_ids:
+  - bird_present
+  - bird_count
+  - largest_bird_cell
+
+coco_json: ../../data/h23/instances_subset.json
+split_json: ../../data/h23/split_h23_subset.json
+images_dir: ../../data/h23/images
+output_dir: ../../outputs
+split: test
+limit: 8

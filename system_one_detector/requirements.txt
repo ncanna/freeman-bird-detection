@@ -1,0 +1,28 @@
+# Core harness. Heavy model libraries are optional and imported only by the
+# backend that needs them.
+pyyaml
+numpy
+pillow
+
+# TypeSafe Jev speaks HTTPS; the harness uses the stdlib client.
+# Optional SDK (retries, typed questions): pip install typesafe-sdk
+
+# Laya (local encoder, text state only):
+#   pip install laya
+
+# Jev-Omni (Gemma 4 12B, image/audio/video, CUDA):
+#   pip install -r https://huggingface.co/akhilaaa3/Jev-Omni/resolve/main/requirements.txt
+
+# OneJev and other System One servers (HTTP, optional media):
+#   pip install "qev[torch] @ git+https://github.com/OmniJev/OneJev.git"
+
+# Djev is API-only. No install needed; set DJEV_API_KEY (invite-only).
+
+# jevimage (one encoder pass per image, then matmuls):
+#   pip install jevimage          # HTTP client
+#   pip install 'jevimage[local]' # encoder in this process
+
+# Clef is API-only. Set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_AUTH_TOKEN.
+
+# OmniJev (tinnel123) needs its repo on sys.path plus its requirements. See
+# configs/omni_jev_h23.yaml.

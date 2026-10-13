@@ -1,0 +1,781 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage[colorlinks=true,linkcolor=blue!60!black,citecolor=blue!60!black,urlcolor=blue!60!black]{hyperref}
+\usepackage{microtype}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  framerule=0.3pt,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false
+}
+
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\pkg}[1]{\texttt{#1}}
+\newcommand{\sone}{System One}
+
+\title{Where is This Bird: Using Typed Decision Models for Camera-Trap Bird Detection\\
+of the Hume's Leaf Warbler}
+
+\author{%
+  Implementation notes and experimental record\\
+  Georgia Tech Mountain Bird Lab --- \code{freeman-bird-detection}
+}
+\date{October 4, 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Object detectors answer \emph{where}; the emerging class of \emph{\sone{}
+decision models} answers \emph{typed questions}: a state (optionally with
+media) plus a map of closed questions returns calibrated probability
+distributions in one forward pass with zero generated tokens. Our target
+detection problem is the Hume's Leaf Warbler (\emph{Phylloscopus humei}) on
+Freeman camera-trap footage: a small ($\approx$10\,cm), cryptically plumaged
+leaf warbler that occupies a small fraction of the frame and is frequently
+occluded by vegetation --- the hard tail of the detection distribution, across
+a growing collection of site datasets of which H55 is one. We report an
+implementation study of wiring a decision model (Jev-Omni, a Gemma-4-12B
+unified multimodal transformer with a trained linear decision head) into our
+pipeline, which otherwise uses supervised detectors (YOLO, RT-DETR). We
+contribute: (i) a harness that maps COCO box annotations onto three typed
+questions and maps answers back into valid COCO output; (ii) a reproducible
+video-sampling and frame-extraction protocol; (iii) an empirical finding that
+the released checkpoint's calibrated probabilities are unusable at standard
+thresholds on our domain (230/230 frames called ``no bird'' with mean
+confidence 0.897; maximum bird probability 0.274 across the run); (iv) a
+dissection of the decision-model architecture showing it is a fine-tuned VLM
+whose adaptation recipe is published inside the artifact; and (v) a tiered
+fine-tuning roadmap from threshold refitting through head retraining to LoRA
+adaptation, with the data protocol required to execute it. This document
+doubles as the engineering record for the implementation.
+\end{abstract}
+
+\section{Introduction}
+
+\paragraph{Study system.} The Georgia Tech Mountain Bird Lab monitors bird
+activity at the Freeman site with motion-triggered camera traps. The target
+species is the Hume's Leaf Warbler (\emph{Phylloscopus humei}), a
+$\approx$10\,cm cryptically plumaged leaf warbler: drab against bark and leaf
+litter, often foraging inside vegetation, and therefore --- at typical
+camera-trap standoff distances --- a small, partially occluded object that is
+difficult even for human annotators to spot (in the H55 sample studied here,
+several frames we initially read as containing a bird were judged bird-free by
+the site owner). The footage arrives as a growing set of
+site datasets --- h23 (annotated with COCO boxes, the training corpus for our
+supervised detectors), h03, and the H55 download studied here --- so methods
+must be multi-site by construction: seeded sampling and extraction run
+per dataset, and any model we adapt must cope with site-specific burn-ins
+(every H55 frame carries a Browning info bar stamped \code{H55}) without
+per-site curation.
+
+Automated camera-trap pipelines overwhelmingly treat ``what is in this
+frame?'' as an object-detection problem. Our repository follows that
+convention: \pkg{hlwdetector} trains YOLO11/26 and RT-DETR adapters on COCO
+boxes extracted from Freeman-site footage (the h23 dataset), with per-video
+train/val/test splits, mAP-style evaluation, and confusion-matrix tooling.
+Detection, however, is not the only useful output. Field ecology often asks
+coarser questions first --- \emph{is any bird visible?}, \emph{roughly how
+many?}, \emph{where in the frame?} --- and for a species the size and habits
+of \emph{P.~humei}, those coarser questions are the difference between a
+usable screening tool and nothing at all: if box-level detection is the hard
+part, a calibrated ``is a warbler plausibly in this frame?'' is still worth
+having. A model that answers such questions \emph{with calibrated
+probabilities, without generating text}, is attractive on three axes: no box
+supervision is required to ask them; the answers compose into COCO-format
+artifacts cheaply; and the interface is auditable (a distribution over a
+closed option set, not free text).
+
+The \sone{} model family (TypeSafe Jev, Laya, Jev-Omni, OmniJev, and
+compatible servers) exposes exactly this interface: a \emph{state} plus a map
+of questions, each of type \code{noul} (yes/no probability), \code{choice}
+(distribution over a caller-defined option set), or \code{score} (an ordered
+rubric). This paper documents the first end-to-end exercise of that interface
+on our data: a reproducible, seeded subsample of the H55 site (5 of 1{,}144
+videos, 230 extracted frames), a harness (\pkg{system\_one\_detector}) that
+runs any of nine registered backends over COCO-adjacent frame sets, conversion
+of per-frame answers into COCO format, and visualization of the result. H55 is
+deliberately treated as a template: every tool here is dataset-agnostic and
+re-runs unchanged on the other site datasets as they enter the pipeline.
+
+Two findings organize everything that follows. First, \emph{the decision
+model's released calibration does not transfer to our domain}: the model
+assigns ``bird present'' a maximum probability of 0.274 across 230 frames
+while never exceeding a 0.5-class decision, so threshold-based consumption of
+its answers is empty by construction. Second, \emph{the model is a fine-tuned
+VLM}, and its fine-tuning recipe ships inside the artifact --- which makes
+domain adaptation not merely possible but a matter of executing a documented
+process at reduced scale.
+
+\section{Two paradigms in one repository}
+\label{sec:paradigms}
+
+The repository deliberately maintains both paradigms side by side.
+
+\paragraph{Supervised detection (the DETR side).}
+\pkg{hlwdetector} wraps Ultralytics YOLO11/26 and RT-DETR as registered
+adapters driven by YAML experiment configs. The production configuration
+(\code{rtdetr\_h23\_full.yaml}) fine-tunes \code{rtdetr-l.pt} for 100 epochs
+at $640^2$, batch 32, on gold COCO boxes from the h23 split. Every gradient
+step optimizes the target task on in-domain imagery; evaluation produces
+mAP50/mAP50-95, precision/recall, and frame-level confusion matrices with
+TP/FP/TN/FN example mining. This is the performance ceiling of the
+repository, and its mechanism is unremarkable by design: supervised
+fine-tuning on labeled in-domain data with a measurement loop.
+
+\paragraph{Typed decisions (the \sone{} side).}
+\pkg{system\_one\_detector} is a self-contained package (not an
+\pkg{hlwdetector} adapter) that asks typed questions of frames. Its backend
+registry covers nine adapters: TypeSafe Jev (text-only), Laya (text-only),
+Jev-Omni (image/audio/video, CUDA), Cloudflare Clef (images), Djev
+(diffusion-sampled, invite-only), \code{jevimage} (dual-encoder embeddings),
+OmniJev v1.1 (Qwen3.5 LoRA + decision heads), an OpenAI Decisions adapter, and
+a generic HTTP adapter for OneJev-style \code{/v1/systemone} servers. Text-only
+backends double as metadata baselines; pixel-seeing backends receive the PNG
+frame. The harness enforces interface discipline (media-type guards before
+credential checks), one \code{decide()} call per frame, per-frame error
+capture, and Brier/ECE/accuracy scoring against gold labels where they exist.
+
+The two sides answer different questions. The detector answers ``where is the
+bird'' with boxes; the decision model answers ``is there a bird, how many,
+whereabouts'' with distributions. Section~\ref{sec:coco} shows the answers
+compose into COCO; Section~\ref{sec:finetune} shows the decision model can be
+pushed toward the detector's training regime.
+
+\subsection{Positioning against two recent threads}
+\label{sec:threads}
+
+Two contemporaneous papers bound this work from both sides of the token
+bottleneck, and both are NVIDIA-led.
+
+\paragraph{Encoder-free understanding (PixelUMM; input side).}
+PixelUMM \cite{pixelumm2026} removes the vision encoder and VAE altogether:
+images are $16\times16$ raw-pixel patches, videos are spatiotemporal tubelets,
+joined to a Qwen3-8B backbone by single-layer linear projections through a
+Mixture-of-Transformers (understanding expert, generation expert, shared
+self-attention), trained with autoregressive text prediction and pixel-space
+flow matching. Its claim that matters to us is \emph{understanding at native
+pixel resolution}: no discrete vision-token budget stands between the sensor
+and the language model. Our calibration failure
+(Section~\ref{sec:results}) leaves open whether the bird is ever resolved by
+the vision tower at all --- at 70 image tokens, a $\approx$10\,cm warbler at
+camera-trap standoff may fall below the encoder's effective resolution.
+PixelUMM-class backbones are the architectural endpoint of the
+high-token-budget and tile-crop tests we propose: if detail, not reasoning,
+is the bottleneck, encoder-free native-resolution understanding attacks it
+directly, and our decision head --- which reads only the last hidden state
+--- is backbone-portable by construction.
+
+\paragraph{Parallel Box Decoding (LocateAnything; output side).}
+LocateAnything \cite{locateanything2026} attacks the output side: VLM
+grounding conventionally serializes each box into 1D coordinate tokens
+decoded autoregressively, fragmenting box geometry and capping throughput.
+Parallel Box Decoding (PBD) instead treats each box as an \emph{atomic
+block} --- four quantized coordinates plus structural tokens, decoded in one
+parallel step via box-aligned multi-token prediction, co-trained with a
+standard NTP formulation to preserve causal reasoning, with a
+hybrid mode that falls back to token-wise decoding on unreliable blocks. It
+reports $2$--$6\times$ decoding speedups and better high-IoU localization
+than token-serialized grounding at matched scale, trained on 138M queries.
+PBD is the natural Tier-3 extension of our interface: our 256-way head is
+already a parallel discrete decoder (all option probabilities in one pass,
+zero generated tokens), and PBD generalizes the same principle from verdicts
+to geometry. Under our typed-question contract, a box question would become
+\emph{another atomic unit type} ---$noul$/$choice$/$score$ coins plus a
+\code{box} oracle emitting $(x_1,y_1,x_2,y_2)$ in one step --- replacing the
+$3\times3$ cell prior with real boxes, and upgrading \code{bird\_count} from
+a coarse rubric to per-bird boxes in dense frames. Its explicit
+\emph{Negative block} is our \code{bird\_present} gate, rediscovered.
+
+Both threads support this paper's organizing claim: probabilistic decision
+interfaces and supervised detection are converging on the same regime ---
+supervised fine-tuning of an LLM backbone on structured targets, with
+calibration shipped alongside the weights.
+
+\section{Harness design}
+\label{sec:harness}
+
+\subsection{From COCO boxes to typed questions}
+\label{sec:questions}
+
+Three default questions map COCO box annotations onto the \sone{} interface:
+
+\begin{itemize}
+  \item \code{bird\_present} (\code{noul}) --- ``Is at least one bird visible
+        in this camera-trap frame?'' Gold: $1$ iff the frame has $\ge 1$ box.
+  \item \code{bird\_count} (\code{score}) --- ordered rubric over
+        none\,/\,one\,/\,2--3\,/\,4+. Gold: the count level of the frame's boxes.
+  \item \code{largest\_bird\_cell} (\code{choice}) --- the center of the
+        largest bird (by box area) as one of nine $3\times3$ grid cells, plus
+        an explicit \code{none} option (ten options total, deliberately under
+        the $\sim$20-option degradation reported for this family). Gold: the
+        cell containing the largest box's center.
+\end{itemize}
+
+The text state carries only the frame name, video stem, and frame index ---
+never label-derived facts --- with an explicit note that the text does not
+describe the picture. A fourth question (\code{primary\_category}) activates
+only when the COCO category list plus \code{none}/\code{other} stays at or
+below 20 options.
+
+\subsection{Engine and outputs}
+
+The engine loads a split (COCO JSON, split JSON, or a flat images directory),
+builds the question map once, and calls the backend once per frame, recording
+answers, usage, and per-frame errors without failing the run. Outputs land in
+\code{outputs/<config>\_<timestamp>/} as \code{decisions.json} (normalized
+answers per frame) and \code{metrics.json}. A mock backend with deterministic
+answers supports dry runs that exercise the full path --- split filtering,
+question building, scoring --- without weights, keys, or a GPU.
+
+\subsection{From answers back to COCO}
+\label{sec:coco}
+
+Because \sone{} models emit no coordinates, the COCO mapping must not invent
+them. Our converter (\code{tools/coco\_from\_decisions.py}) therefore:
+
+\begin{enumerate}
+  \item emits one COCO \emph{image} entry per frame (an empty annotation list
+        is a prediction of ``no bird''), with the raw answers preserved in an
+        \code{attributes} extension;
+  \item emits an \emph{annotation} only when (a) $P(\text{bird}) \ge \tau$
+        (default $\tau = 0.5$) \emph{and} (b) the cell answer names a real
+        grid cell (not \code{none});
+  \item sets \code{bbox} to the \emph{predicted cell rectangle} --- exactly one
+        ninth of the frame, positioned by the cell --- a location prior rather
+        than a tight box;
+  \item sets \code{score} to the bird-present probability, and preserves the
+        full cell and count distributions in \code{attributes};
+  \item records provenance (input sha256, threshold, model identities) in
+        \code{info.source}.
+\end{enumerate}
+
+Contradictory frames (bird present but cell \code{none}) produce no annotation
+rather than a guessed box. The mapping is honest by construction, which turns
+out to matter: Section~\ref{sec:results} shows the $\tau=0.5$ export is empty
+for the released checkpoint, and the honest reading of the $\tau=0.2$ export
+is ``regions to review,'' not detections.
+
+\section{The H55 experiment}
+\label{sec:experiment}
+
+\subsection{Data}
+
+H55 is one of several site datasets in the program. The corpus as of this
+study:
+
+\begin{itemize}
+  \item \textbf{h23} --- the annotated main dataset (COCO boxes extracted from
+        video, per-video splits); the training and evaluation corpus for the
+        supervised detectors. Located on the cluster; not on the analysis
+        laptop.
+  \item \textbf{h03} --- a second camera-trap dataset, not yet exercised by
+        the \sone{} harness.
+  \item \textbf{H55} --- the raw download studied here:
+        \code{data/H55/Download1\_28072024/} holds 1{,}144 H.264 videos
+        ($1280\times720$, 29.97\,fps, mostly 10\,s / 303 frames, $\sim$5.9\,MB
+        each; some clips run to 35\,s) and 1{,}144 camera-generated
+        \code{*\_QV.JPG} thumbnails (unused), 7.4\,GB total. Every frame
+        carries a burned-in Browning info bar (temperature, site stamp
+        \code{H55}, timestamp) in the bottom rows.
+  \item \textbf{train\_images} --- an 11-frame pilot set (video
+        \code{IMG\_0595}) used for the original MLX proof of concept.
+\end{itemize}
+
+There are no annotations of any kind for H55 at the time of writing;
+researcher-provided presence labels for a subset are being downloaded and will
+become the first gold set (Section~\ref{sec:roadmap}).
+
+\subsection{Seeded video sampling}
+
+\code{tools/sample\_videos.py} draws uniformly without replacement:
+$\texttt{random.Random(seed)}.\texttt{sample}(\texttt{sorted(paths)}, k)$,
+re-sorted after the draw, with per-video metadata probed by \code{ffprobe}.
+With $k=5$, seed $42$, the draw selects Table~\ref{tab:sample}. The sample is
+reproducible: the provenance JSON records the seed, candidate count, and the
+draw.
+
+\begin{table}[t]
+\centering
+\caption{The seeded sample (seed 42, 5 of 1{,}144 videos).}
+\label{tab:sample}
+\begin{tabular}{lrrrr}
+\toprule
+video & frames & duration & resolution & size \\
+\midrule
+IMG\_0060.MP4 & 303 & 10.1\,s & $1280\times720$ & 5.9\,MB \\
+IMG\_0237.MP4 & 303 & 10.1\,s & $1280\times720$ & 6.0\,MB \\
+IMG\_0466.MP4 & 303 & 10.1\,s & $1280\times720$ & 5.9\,MB \\
+IMG\_0510.MP4 & 303 & 10.1\,s & $1280\times720$ & 5.9\,MB \\
+IMG\_0572.MP4 & 1{,}053 & 35.1\,s & $1280\times720$ & 20.4\,MB \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Frame extraction}
+
+\code{tools/video\_to\_frames.py} decodes each video with OpenCV (four
+parallel workers) and writes \emph{every stride-th frame} as lossless PNG
+under the repository convention
+\code{<video\_stem>\_frame\_<original\_index:06d>.png}, so the harness groups
+frames by video stem unchanged and every filename traces to its exact source
+position. At stride 10 ($\approx$3 samples/s) the five videos yield
+$31{+}31{+}31{+}31{+}106 = \mathbf{230}$ frames (535\,MB). A
+\code{frame\_map.csv} and an extraction-provenance JSON travel with the
+frames. Stride 10 resolves bird-scale motion without materializing
+near-duplicate frames; finer granularity is a re-run flag, not a redesign.
+
+\subsection{Runs}
+
+A harness config (\code{configs/h55\_sample.yaml}) points at the frames
+directory with the three default questions and modality \code{image}.
+
+\paragraph{Plumbing check.} A \code{--dry-run} pass (mock backend) processes
+all 230 frames end to end and writes \code{decisions.json},
+\code{metrics.json}, and a template COCO export; this validates the harness
+independently of any model.
+
+\paragraph{Real model.} The only pixel-seeing backend available on Apple
+Silicon without API keys is the community 4-bit MLX conversion of Jev-Omni
+(\code{Ruiruiz30/Jev-Omni-MLX-4bit}) behind the standalone POC script. We run
+it over all 230 frames with the three questions, 70 image tokens, and the
+checkpoint's JevBench-fitted temperature ($T = 1.11517$). Table~\ref{tab:run}
+records the run cost; the POC writes its results JSON before serving a review
+UI, so the run is scriptable headlessly.
+
+\begin{table}[t]
+\centering
+\caption{Jev-Omni MLX 4-bit run profile (230 frames $\times$ 3 questions,
+Mac M-series, 16\,GB unified memory, batch size 1).}
+\label{tab:run}
+\begin{tabular}{lr}
+\toprule
+model load & 10.3\,s \\
+wall time (inference) & 1{,}105.7\,s ($\approx$18.4\,min) \\
+median latency per decision & 1{,}456.6\,ms \\
+peak Metal memory & 7.2\,GB \\
+decision errors & 0 / 690 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Results}
+\label{sec:results}
+
+\subsection{The model declines to see birds --- everywhere}
+
+\begin{table}[t]
+\centering
+\caption{Per-question behaviour over 230 frames.}
+\label{tab:answers}
+\begin{tabular}{llrl}
+\toprule
+question & prediction & $n$ & mean confidence \\
+\midrule
+\code{bird\_present} & No bird is visible & 230/230 & 0.897 \\
+\code{bird\_count}   & no birds are visible & 230/230 & 0.853 \\
+\code{largest\_bird\_cell} & (spread; see text) & --- & 0.280 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The bird-present probability never reaches 0.5: the maximum is \textbf{0.274}
+(\code{IMG\_0572\_frame\_000700}), followed by 0.212, 0.208, 0.202, 0.199;
+the distribution is a long low tail (median $\approx 0.09$, minimum 0.064).
+The count question agrees (trivially correlated with presence). The cell
+question, asked unconditionally by the POC, is uninformative without a bird:
+its confidence averages 0.280 and its argmax spreads over five cells
+(middle-right 108, top-left 55, center 30, middle-left 28, top-center 9).
+
+This matches a prior 11-frame pilot on \code{train\_images} (11/11 ``no bird''
+at $\approx$0.91 confidence): the shape is a property of the
+checkpoint-on-this-domain pairing, not of one sample. Given that the site
+owner judges the top-ranked frames bird-free --- the birds on this site are
+camouflaged and small in frame --- the model's \emph{negatives} may be largely
+correct; what fails is \emph{calibration}: the probability scale is
+systematically compressed far below any usable threshold.
+
+The study species sharpen this reading into a testable hypothesis. A
+$\approx$10\,cm warbler at camera-trap standoff occupies on the order of tens
+of pixels in a $1280\times720$ frame; at the 70-token image budget used here,
+the effective per-token resolution plausibly renders the bird sub-threshold
+for the vision tower, in which case no calibration could recover a signal the
+encoder never resolves. Two cheap falsification tests follow from the
+harness: re-run at the 280-token budget (the measured 22\,s/frame cost is
+acceptable on a screening pass), and tile-crop ensembling (four half-res
+crops, one decision each, aggregated). If the compressed-scale behaviour
+persists at high token budget and on crops, the failure is representational
+and points at Tier 3 (Section~\ref{sec:finetune}); if it lifts, it is an
+input-budget problem and Tier 1 suffices.
+
+Consistent with the documented noul bias of this model family (OmniJev v1.1
+ships a learned $\text{noul bias} = 0.0531$ for exactly this reason), the
+released temperature, fit on JevBench, is a benchmark artifact, not a domain
+artifact.
+
+\subsection{COCO exports at two thresholds}
+
+At $\tau = 0.5$ the COCO export contains 230 image entries and zero
+annotations --- a valid COCO dataset asserting ``no birds anywhere,'' which is
+the honest representation of the run. A sensitivity export at $\tau = 0.2$
+yields four annotations, all on \code{IMG\_0572} (cells tl, tl, mc, mc; scores
+0.202--0.274).
+
+\subsection{Visualization}
+
+\code{tools/coco\_draw.py} renders COCO annotations back onto frames with the
+$3\times3$ grid overlaid (essential context, since these boxes \emph{are}
+cells), labels each box with $P(\text{bird})$, cell confidence, and count
+rubric, and builds a montage contact sheet. The four rendered boxes sit on
+vegetation texture; none contains a confirmed bird. Two readings follow: the
+threshold-0.2 survivors are texture false positives from a single video (so
+the sample provides no independent evidence), and cell-level localization from
+the released head is not yet meaningful on this domain.
+
+\section{What the decision model actually is}
+\label{sec:architecture}
+
+The local MLX snapshot and the upstream artifact pin the architecture down
+exactly.
+
+\paragraph{Base.} \code{google/gemma-4-12B-it}: a 48-layer text backbone
+(hidden size 3840) with separate vision and audio towers, exposed as
+\code{Gemma4UnifiedForConditionalGeneration} (\code{model\_type:
+gemma4\_unified}). Jev-Omni is tagged \code{merged} --- it \emph{is} a
+fine-tune: ``Built on Gemma 4 12B IT, with a 30{,}000-question fine-tuning
+run.''
+
+\paragraph{Decision head.} A prompt is assembled from state, question, and
+numbered options; one forward pass produces the sequence; the \textbf{last
+hidden state} is normalized by stored feature statistics ($\mu,\sigma$,
+each $1\times3840$), projected by a linear head
+$\mathbf{W} \in \mathbb{R}^{256\times3840}$ sliced to the option count $K$,
+plus bias, then softmaxed and temperature-scaled:
+\begin{equation}
+p \;=\; \mathrm{softmax}\!\left(
+\frac{h_{\text{last}} - \mu}{\sigma}\,\mathbf{W}_{[:K]}^{\top} + b_{[:K]}
+\right)^{1/T}.
+\end{equation}
+There is no vocabulary projection and no token generation: the ``System One''
+interface is a classification head riding on a multimodal LLM. Measured from
+\code{decision\_head/weights.safetensors}: \textbf{990{,}976 FP32 parameters
+total}. In the MLX conversion the LM weights are 4-bit affine (group 64),
+vision weights remain BF16, and the head remains FP32. The head is sliced
+\emph{positionally}, so option order is part of the interface contract.
+
+\paragraph{The fine-tuning recipe ships in the artifact.} The upstream
+\code{decision\_config.json} records how the released weights were produced:
+LoRA rank 512, $\alpha{=}512$, learning rate $10^{-5}$ (head too), 24{,}000
+records, one epoch (750 steps), effective batch 32, linear warmup (10\%) then
+decay to 10\% of peak, 4-GPU DDP, $\approx$2.1B trainable parameters,
+initialized from ``FP32 merged trained v1 + trained head + fresh LoRA'' ---
+iterative merge-then-adapt rounds. The ecosystem replicates the recipe across
+backbones: OmniJev v1.1 is the same design (LoRA + decision heads + an
+ordinal head) on Qwen3.5 in three sizes.
+
+\section{Fine-tuning roadmap}
+\label{sec:finetune}
+
+The supervised side of the repository improves by unremarkable means ---
+in-domain labels, a task-aligned loss, and a measurement loop
+(Section~\ref{sec:paradigms}). The decision model can be pushed down the same
+path in three tiers of increasing cost.
+
+\subsection{Tier 1 --- refit the calibration (no training)}
+
+Fit an operating threshold $\tau$ and per-question temperature on gold frames.
+This converts the run's ranking behaviour into decisions with a measured error
+rate. Hours of work; no gradients. It also partially absorbs the constant
+info-bar effect (Section~\ref{sec:roadmap}).
+
+\subsection{Tier 2 --- retrain the decision head (this Mac)}
+
+Because \code{omni\_mlx/classifier.py} already extracts $h_{\text{last}}$,
+feature capture is one forward pass per (frame, question) --- the inference we
+already run, plus a 3{,}840-dim vector write-out. The head is then a
+regularized multinomial logistic regression over frozen features:
+$\sim$991k parameters, minutes to train. Training on \emph{4-bit-extracted}
+features exactly matches the deployment path. Head retraining also learns
+around the info bar: it is a constant visual feature across frames, and a
+trained head can encode it as context rather than noise. Data requirement:
+hundreds to a few thousand labeled frames; splits must be by \emph{video}, not
+by frame.
+
+\subsection{Tier 3 --- LoRA on the backbone (GPUs)}
+
+The published recipe (Section~\ref{sec:architecture}) scales down: rank
+16--128, lr $10^{-5}$, one epoch over 1--5k in-domain records, with a replay
+mix to avoid forgetting the benchmark alignment. This requires the upstream
+BF16 checkpoint and CUDA (the repository's Slurm/submitit patterns apply); the
+4-bit MLX conversion is an inference artifact, not a training starting point.
+Beyond Tier 3, the output contract itself can grow a geometry primitive: a
+box-aligned block head in the style of Parallel Box Decoding
+\cite{locateanything2026} would emit real coordinates atomically, replacing
+the $3\times3$ cell prior (Section~\ref{sec:threads}).
+\pkg{mlx-vlm} 0.7.4 also ships an SFT/LoRA trainer with a vision-language loss
+and a \code{gemma4\_unified} implementation --- training on Apple Silicon is
+plausible but untested for this architecture.
+
+\paragraph{Order of operations.} Head-only first: it is matched to deployment
+and cheap; if it stalls, that is the signal that the \emph{features} (not the
+probe) are the bottleneck and Tier 3 is worth GPU spend. Following the OmniJev
+lesson, any artifact we train ships with its own bias/calibration file ---
+fine-tuned heads shift decision boundaries.
+
+\section{Ongoing and planned work}
+\label{sec:roadmap}
+
+\begin{enumerate}
+  \item \textbf{Gold labels.} Researchers hand-annotated a subset of H55
+        frames with bird presence (a positive/negative mix); these become the
+        first true evaluation set for \code{bird\_present} and
+        \code{bird\_count}, and the basis for Tier 1--2. Presence-only labels
+        do not supervise \code{largest\_bird\_cell}; cell training requires
+        location boxes.
+  \item \textbf{Temporal aggregation.} Frames are stride-10 samples of
+        continuous video; a bird visible for 2\,s spans $\sim$60 sampled
+        neighbours. Aggregating decisions per video (max or median
+        $P(\text{bird})$ over a video's frames) converts temporal redundancy
+        into recall for free, and per-frame gold will tell us which
+        aggregation wins rather than guessing.
+  \item \textbf{The info bar stays.} We deliberately do not crop the
+        burned-in footer; the model must learn our deployment distribution.
+        Its effect is systematic (constant across frames), which calibration
+        and head retraining absorb; a per-cell prior correction remains
+        available if bottom-row cells show a directional bias.
+  \item \textbf{Detector cross-check.} Running the h23-trained YOLO/RT-DETR
+        adapters over the same 230 frames gives an agreement analysis whose
+        disagreements are the highest-value frames to label next (active
+        learning).
+  \item \textbf{From presence to species.} The program end goal is detection
+        \emph{of the Hume's Leaf Warbler}, not of birds in general. The
+        harness already supports a \code{primary\_category} choice question
+        when the category list stays under 20 options; with the h23 category
+        vocabulary (or a warbler-centric reduction:
+        \code{hume's leaf warbler} / \code{other bird} / \code{none}), the
+        same typed interface extends from ``is a bird present'' to ``is this
+        the warbler,'' and gold presence labels plus site records can
+        supervise it. The head's positional option slicing
+        (Section~\ref{sec:architecture}) makes canonical option order part of
+        the training contract.
+  \item \textbf{Multi-site generalization.} Every tool here is
+        dataset-agnostic; h03 and future downloads re-run the
+        sample$\to$extract$\to$decide$\to$COCO loop unchanged. Site-specific
+        burn-ins (the H55 info bar) argue for including all sites in the
+        fine-tuning mixture so no single site's overlay becomes a learned
+        crutch, and for reporting per-site calibration separately.
+  \item \textbf{Input budget.} The image-token budget trades detail for
+        latency (70 tokens: 1.5--9\,s per decision locally; 280 tokens: up to
+        22\,s). A $\approx$10\,cm warbler at standoff argues for the high end;
+        tile-crop ensembling is the classical small-object fallback and
+        composes with any backend. The 280-token re-run on the same 230
+        frames is the immediate next experiment. The newest member of the
+        family changes this budget's economics: Liquid's d1-3B
+        \cite{liquid2026d1} --- a decision model on the LFM2.5-VL-3B backbone,
+        released 2026-10-07 with open weights --- answers a 384px image in
+        62\,ms on laptop-class hardware, which makes dense whole-dataset
+        sampling and tile ensembles cheap enough to run routinely.
+\end{enumerate}
+
+\section{Threats to validity}
+
+\textbf{No gold labels at write time.} Every number in Section~\ref{sec:results}
+is model behaviour, not accuracy; the site owner's judgment that the top
+frames are bird-free is expert opinion on a hard (camouflaged) domain, itself
+error-prone. \textbf{Sample size and dependence.} 230 frames from 5 videos;
+all four threshold survivors come from one video, so nothing is independent
+evidence. \textbf{Quantization.} The 4-bit conversion reports JevBench macro
+85.90\% (micro 87.88\%) versus upstream merged-model 86.15\%/87.45\% on the
+matched set --- close, but the conversion card itself warns the numbers are
+not directly comparable. \textbf{Single checkpoint.} Findings are about
+Jev-Omni-on-H55, not the \sone{} family; the text-only baselines (Jev, Laya)
+were excluded by design here since the task is visual.
+
+\section{Conclusion}
+
+A decision model plugs into a camera-trap pipeline cleanly at both ends: COCO
+boxes become typed questions, and typed answers become valid (if honest) COCO.
+What does not transfer, today, is calibration: the released artifact's
+probabilities are compressed far below any usable threshold on our domain,
+which empties threshold-based consumption and turns ``what is possible''
+experiments into calibration studies. For the program's target --- detecting a
+$\approx$10\,cm cryptic warbler in vegetation --- this is expected rather than
+surprising, and the architecture dissection explains why it is fixable rather
+than fundamental: the model is a fine-tuned VLM whose own recipe (LoRA +
+decision head + calibration artifacts) is published and scalable down to our
+data regime, with a head-only tier that runs on the same machine that runs
+inference. The near-term plan is deliberately unglamorous: gold labels,
+threshold and temperature refitting, temporal aggregation, a detector
+cross-check, and the high-token-budget re-run that tests whether the bird is
+resolved at all --- the same three levers, labels, loss alignment, and
+measurement, that carry the DETR side, aimed at a species-sized question.
+
+\begin{thebibliography}{9}
+
+\bibitem{carion2020detr}
+N.~Carion, F.~Massa, G.~Synnaeve, N.~Usunier, A.~Kirillov, and S.~Zagoruyko,
+``End-to-end object detection with transformers,'' in \emph{ECCV}, 2020.
+
+\bibitem{zhao2023rtdetr}
+Y.~Zhao, W.~Lv, S.~Xu, J.~Wei, G.~Wang, Q.~Dang, Y.~Liu, and J.~Chen,
+``DETRs beat YOLOs on real-time object detection,'' \emph{arXiv:2304.08069},
+2023.
+
+\bibitem{lin2014coco}
+T.-Y.~Lin, M.~Maire, S.~Belongie, J.~Hays, P.~Perona, D.~Ramanan,
+P.~Doll\'ar, and C.~L.~Zitnick,
+``Microsoft COCO: Common objects in context,'' in \emph{ECCV}, 2014.
+
+\bibitem{hu2021lora}
+E.~J.~Hu, Y.~Shen, P.~Wallis, Z.~Allen-Zhu, Y.~Li, S.~Wang, L.~Wang, and
+W.~Chen,
+``LoRA: Low-rank adaptation of large language models,'' in \emph{ICLR}, 2022.
+
+\bibitem{guo2017calibration}
+C.~Guo, G.~Pleiss, Y.~Sun, and K.~Q.~Weinberger,
+``On calibration of modern neural networks,'' in \emph{ICML}, 2017.
+
+\bibitem{norouzzadeh2018}
+M.~S.~Norouzzadeh, A.~Nguyen, M.~Kosmala, J.~M.~Swanson, C.~T.~Packer, and
+S.~Beery-Thomas (Snapshots team),
+``Automatically identifying, counting, and describing wild animals in
+camera-trap images with deep learning,'' \emph{PNAS}, vol.~115, no.~25, 2018.
+
+\bibitem{gemma4}
+Gemma Team, \emph{Gemma 4}, Google, 2026. Software artifact:
+\code{google/gemma-4-12B-it}.
+
+\bibitem{jevomni}
+akhilaaa3, \emph{Jev-Omni}, Hugging Face model card and artifact, 2026.
+\code{akhilaaa3/Jev-Omni} (base \code{google/gemma-4-12B-it}, merged).
+
+\bibitem{jevomnimlx}
+Ruiruiz30, \emph{Jev-Omni-MLX-4bit}, Hugging Face model card, 2026.
+Independent 4-bit MLX conversion of \code{akhilaaa3/Jev-Omni}.
+
+\bibitem{omnijev}
+tinnel123666888, \emph{OmniJev v1.1}, GitHub repository and Hugging Face
+weights, 2026. \code{tinnel123666888/OmniJev}, \code{tinnel123/OmniJev}.
+
+\bibitem{mlxvlm}
+\emph{mlx-vlm}, 2026. Version 0.7.4: \code{gemma4\_unified} support and
+SFT/LoRA trainer with vision-language loss.
+
+\bibitem{pixelumm2026}
+C.~Wei, X.~Ren, B.~Chu, W.~Ren, H.~Ling, J.~Huang, L.~Leal-Taix\'e,
+S.~Fidler, W.~Chen, Z.~Wang, and J.~Z.~Wu,
+``PixelUMM: Encoder-free unified image and video understanding and
+generation,'' \emph{arXiv:2609.38597}, NVIDIA, 2026.
+
+\bibitem{locateanything2026}
+S.~Wang, S.~Liu, Y.~Kuang, X.~Wei, Y.~Liu, Z.~Li, Y.~Man, G.~Chen, A.~Tao,
+G.~Liu, J.~Kautz, L.~Zhang, and Z.~Yu,
+``LocateAnything: Fast and high-quality vision-language grounding with
+parallel box decoding,'' \emph{arXiv:2605.27365}, NVIDIA, 2026.
+
+\bibitem{liquid2026d1}
+Liquid AI, ``Open d1: Edge decision models for text, vision, and audio,''
+October 2026. \code{LiquidAI/d1-3b}, \code{LiquidAI/d1-omni-600M}.
+
+\bibitem{cf2026clef}
+Cloudflare, ``Introducing Clef: our open-source decision models, and new RL
+fine-tuning platform,'' October 2026. \code{Cloudflare/clef},
+\code{Cloudflare/clef-flash}, Apache-2.0.
+
+\end{thebibliography}
+
+\appendix
+
+\section{Artifact inventory}
+
+\begin{table}[h]
+\centering
+\caption{Tools and artifacts produced by this study (all under
+\code{system\_one\_detector/} unless noted).}
+\begin{tabular}{p{5.2cm}p{9.2cm}}
+\toprule
+artifact & purpose \\
+\midrule
+\code{tools/sample\_videos.py} & seeded uniform video draw with \code{ffprobe}
+provenance \\
+\code{tools/video\_to\_frames.py} & stride-based MP4$\to$PNG extraction;
+h23-compatible naming; \code{frame\_map.csv} + provenance \\
+\code{tools/coco\_from\_decisions.py} & decisions (engine or POC JSON)
+$\to$ COCO; cell-rect boxes; provenance sha256 \\
+\code{tools/coco\_draw.py} & render COCO boxes + $3\times3$ grid + labels;
+montage contact sheet \\
+\code{configs/h55\_sample.yaml} & harness config over the sampled frames \\
+\code{h55\_experiment/README.md} & full engineering record for this study \\
+\code{data/H55/video\_sample.json} & sampling provenance (seed, draw, metadata) \\
+\code{data/H55/frames\_sample5\_stride10/} & 230 PNG frames + maps
+(gitignored) \\
+\code{outputs/h55/} & dry-run, real run JSON, two COCO exports, per-frame CSV,
+visualization montage (gitignored) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Reproduction commands}
+
+\begin{lstlisting}[language=bash]
+# 1. sample (seed 42)
+python3 -m system_one_detector.tools.sample_videos \
+  --video-dir data/H55/Download1_28072024 --num 5 --seed 42 \
+  --output data/H55/video_sample.json
+# 2. frames (stride 10)
+python3 -m system_one_detector.tools.video_to_frames \
+  --sample-json data/H55/video_sample.json \
+  --out-dir data/H55/frames_sample5_stride10 --stride 10
+# 3. harness dry-run (mock backend)
+python3 -m system_one_detector.main \
+  system_one_detector/configs/h55_sample.yaml --dry-run
+# 4. real model (Apple Silicon, MLX 4-bit)
+.venv-jevomni/bin/python system_one_detector/jev_omni_mlx_poc.py \
+  --images data/H55/frames_sample5_stride10 --no-browser \
+  --json outputs/h55/poc_h55_70tok.json
+# 5. answers -> COCO (tau = 0.5 and 0.2)
+python3 -m system_one_detector.tools.coco_from_decisions \
+  --input outputs/h55/poc_h55_70tok.json \
+  --frames-dir data/H55/frames_sample5_stride10 \
+  --output outputs/h55/poc_h55_70tok_coco.json
+python3 -m system_one_detector.tools.coco_from_decisions \
+  --input outputs/h55/poc_h55_70tok.json \
+  --frames-dir data/H55/frames_sample5_stride10 \
+  --output outputs/h55/poc_h55_70tok_coco_t020.json --noul-threshold 0.2
+# 6. draw the boxes back onto frames (+ montage)
+python3 -m system_one_detector.tools.coco_draw \
+  --coco outputs/h55/poc_h55_70tok_coco_t020.json \
+  --images-dir data/H55/frames_sample5_stride10
+\end{lstlisting}
+
+\section{Measured head geometry}
+
+\begin{table}[h]
+\centering
+\caption{Decision-head tensors (\code{decision\_head/weights.safetensors}),
+all FP32; total 990{,}976 parameters. The head is applied to the last-token
+hidden state and sliced positionally to the option count.}
+\begin{tabular}{lll}
+\toprule
+tensor & shape & role \\
+\midrule
+\code{mu} & $1\times3840$ & feature mean \\
+\code{sd} & $1\times3840$ & feature scale \\
+\code{linear.weight} & $256\times3840$ & class prototypes (sliced $[:K]$) \\
+\code{linear.bias} & $256$ & class bias (sliced $[:K]$) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\end{document}
