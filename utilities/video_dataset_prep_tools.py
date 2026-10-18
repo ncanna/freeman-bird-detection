@@ -9,9 +9,7 @@ from sklearn.model_selection import train_test_split
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 
-def extract_single_video(
-    video_path: Path, out_dir: Path
-) -> list[tuple[str, str]]:
+def extract_single_video(site_name: str, video_path: Path, out_dir: Path) -> list[tuple[str, str]]:
     """Extract all frames from one video, indexing from 0 per video."""
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
@@ -25,7 +23,7 @@ def extract_single_video(
         ret, frame = cap.read()
         if not ret:
             break
-        frame_name = f"{stem}_frame_{frame_idx:06d}.png"
+        frame_name = f"{site_name}_{stem}_frame_{frame_idx:06d}.png"
         cv2.imwrite(str(out_dir / frame_name), frame)
         mapping.append((frame_name, video_path.name))
         frame_idx += 1
@@ -34,7 +32,7 @@ def extract_single_video(
     return mapping
 
 
-def extract_frames_from_dir(video_dir: Path, out_dir: Path, workers: int = 4) -> None:
+def extract_frames_from_dir(site_name: str, video_dir: Path, out_dir: Path, workers: int = 4) -> None:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -49,7 +47,7 @@ def extract_frames_from_dir(video_dir: Path, out_dir: Path, workers: int = 4) ->
 
     with ProcessPoolExecutor(max_workers=workers) as executor:
         futures = {
-            executor.submit(extract_single_video, vp, out_dir): vp.name
+            executor.submit(extract_single_video, site_name, vp, out_dir): vp.name
             for vp in video_paths
         }
         for future in as_completed(futures):
@@ -254,7 +252,7 @@ def remove_multi_bird_frames(coco_json_path: str, output_path: str, bird_categor
     )
 
 
-def extract_frames_by_split(split_json, video_dir, out_dir):
+def extract_frames_by_split(site_name, split_json, video_dir, out_dir):
     with open(split_json, "r") as f:
             splits: dict[str, list[str]] = json.load(f)
 
@@ -270,5 +268,5 @@ def extract_frames_by_split(split_json, video_dir, out_dir):
                 print(f"WARNING: video not found for {video_name}, skipping.")
                 continue
 
-            frames = extract_single_video(video_path, out_dir)
+            frames = extract_single_video(site_name, video_path, out_dir)
             print(f"[{split_name:5s}] {video_name}: {len(frames)} frames → {out_dir}")
