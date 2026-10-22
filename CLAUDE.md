@@ -66,7 +66,9 @@ outputs/
     <config>_<timestamp>/
       config.json         # Saved ExperimentConfig
       model.json          # Checkpoint paths (stored repo-relative)
-      metrics.json        # Evaluation metrics (updated progressively)
+      results/
+        eval.json         # Final val metrics from ExperimentRunner.evaluate() (rewritten on every log)
+        train.jsonl       # Per-epoch train + val metrics, one JSON line per epoch
       detections.json     # Per-frame predictions
       experiment.log      # Full logging output
       work/               # Training artifacts (YOLO: train.txt/yolo.yaml; torch: runs/train/weights/)
@@ -324,7 +326,7 @@ keeps working and returns the same object.
 - **`HPOptimizer`** — drives an Optuna study, running one `ExperimentRunner` per trial and recording results; `run_study()` returns the `optuna.Study`
 - **`DatasetManager`** — loads COCO JSON, filters images by video stem prefix against split.json lists
 - **`ArtifactManager`** — creates timestamped output dirs for both experiments and HPO studies, serializes/deserializes all artifacts (including `trials.csv` and `study_summary.json`)
-- **`ExperimentTracker`** — writes metrics.json after every log call; W&B failures are non-fatal; `wandb_group` groups a study's trials
+- **`ExperimentTracker`** — `log_eval_metrics` rewrites `results/eval.json` and `log_train_step` appends to `results/train.jsonl` (adapters do not write either file directly); W&B failures are non-fatal; `wandb_group` groups a study's trials
 - **`VisualizationPipeline`** — generates annotated MP4 with ground truth (green) and predictions (blue) overlaid
 - **`compute_coco_metrics`** (`metrics.py`) — shared pycocotools COCOeval scoring for the swin and detr adapters
 

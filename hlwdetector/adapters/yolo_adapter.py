@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 @register_adapter("yolo")
 class YOLOAdapter(BaseModelAdapter):
-    """YOLO adapter backed by Ultralytics.
+    """YOLO adapter interface for Ultralytics YOLO.
 
     Internal state is preserved across sequential calls:
         prepare_data → train → evaluate → predict
@@ -116,22 +116,10 @@ class YOLOAdapter(BaseModelAdapter):
         if best_pt.exists():
             self._model = YOLO(str(best_pt))
 
-        # Collect scalar training metrics if available
-        training_metrics: dict = {}
-        if hasattr(self._model.trainer, "metrics"):
-            raw = self._model.trainer.metrics
-            print("HAS METRICS")
-            print(f"TYPE: {type(self._model.trainer.metrics)}")
-            if isinstance(raw, dict):
-                training_metrics = {k: float(v) for k, v in raw.items() if v is not None}
-        else:
-            print("DOES NOT HAVE METRICS")
-
         self._training_result = TrainingResult(
             run_dir=str(run_dir),
             best_weights_path=str(best_pt) if best_pt.exists() else None,
             last_weights_path=str(last_pt) if last_pt.exists() else None,
-            training_metrics=training_metrics,
         )
         return self._training_result
 
@@ -201,11 +189,6 @@ class YOLOAdapter(BaseModelAdapter):
 
         Fires once per epoch after validation completes. Logs training losses,
         validation metrics, and learning rates as a single dict at step=epoch.
-        Future adapters should follow this same pattern using their framework's
-        equivalent hook, calling self._tracker.log_wandb_step(metrics, step=epoch).
-        Per-epoch metrics go to W&B only — routing them through tracker.log()
-        would persist them into metrics.json, which is reserved for the
-        post-training validation metrics written by ExperimentRunner.evaluate().
         """
         adapter = self
 
@@ -221,7 +204,7 @@ class YOLOAdapter(BaseModelAdapter):
             if trainer.lr:
                 metrics.update({k: float(v) for k, v in trainer.lr.items()})
             if metrics and adapter._tracker is not None:
-                adapter._tracker.log_wandb_step(metrics, step=epoch)
+                adapter._tracker.log_train_step(metrics, step=epoch)
             adapter.report_epoch_to_hpo(epoch, metrics)  # may raise optuna.TrialPruned
 
             return metrics
@@ -293,9 +276,3 @@ class YOLOAdapter(BaseModelAdapter):
                 f"yolo.yaml not found at {candidate}. "
                 f"Ensure prepare_data() was run in experiment '{config.resume_experiment_name}'."
             )
-
-    def _save_standardized_training_results(self) -> None:
-        save_dir = Path(self._model.trainer.save_dir)
-        results_path = save_dir / "train" / "results.csv"
-        results_df = pd.read_csv(results_path)
-        print(results_df)

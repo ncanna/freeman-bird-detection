@@ -1,4 +1,4 @@
-"""ExperimentTracker — W&B (optional) + always-on local metrics.json."""
+"""ExperimentTracker — W&B (optional) + always-on local metrics logging."""
 
 from __future__ import annotations
 
@@ -40,7 +40,8 @@ class ExperimentTracker:
         self._config = config
         self._artifact_manager = artifact_manager
         self._metrics: dict = {}
-        self._metrics_path = artifact_manager.experiment_dir / "metrics.json"
+        self._eval_metrics_path = artifact_manager.results_dir / "eval.json"
+        self._train_metrics_path = artifact_manager.results_dir / "train.jsonl"
         self._wandb_run = None
         self._wandb_enabled = False
 
@@ -95,19 +96,22 @@ class ExperimentTracker:
             logger.warning("W&B init failed (continuing local-only): %s", exc)
             self._wandb_enabled = False
 
-    def log(self, metrics: dict, step: int | None = None) -> None:
-        """Update internal metrics dict, flush metrics.json, optionally push to W&B."""
+    def log_eval_metrics(self, metrics: dict, step: int | None = None) -> None:
+        """Update internal metrics dict, write results/eval.json, optionally push to W&B."""
         self._metrics.update(metrics)
-        self._flush()
-
+        self._eval_metrics_path.write_text(json.dumps(self._metrics, indent=2))
         if self._wandb_enabled and self._wandb_run is not None:
             try:
-                self._wandb_run.log(metrics, step=step)
+                #self._wandb_run.log(metrics, step=step)
+                self._wandb_run.log(metrics)
             except Exception as exc:
                 logger.warning("W&B log failed: %s", exc)
 
-    def log_wandb_step(self, metrics: dict, step: int) -> None:
-        """Push per-step metrics directly to W&B without touching _metrics or metrics.json."""
+    def log_train_step(self, metrics: dict, step: int) -> None:
+        """Record per-epoch metrics locally in jsonl and remotely in W&B"""
+        with self._train_metrics_path.open("a") as f:
+            f.write(json.dumps({"step": step, **metrics}, default=float) + "\n")
+
         if not self._wandb_enabled or self._wandb_run is None:
             return
         try:
@@ -136,8 +140,7 @@ class ExperimentTracker:
             logged.wait()
 
     def finish(self) -> None:
-        """Final flush of metrics.json and close W&B run (idempotent)."""
-        self._flush()
+        """Close W&B run (idempotent)."""
         if self._wandb_enabled and self._wandb_run is not None:
             try:
                 self._wandb_run.finish()
@@ -146,6 +149,3 @@ class ExperimentTracker:
             finally:
                 self._wandb_run = None
                 self._wandb_enabled = False
-
-    def _flush(self) -> None:
-        self._metrics_path.write_text(json.dumps(self._metrics, indent=2))

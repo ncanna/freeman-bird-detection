@@ -52,8 +52,7 @@ class ExperimentRunner:
 
     def evaluate(self):
         metrics = self.adapter.evaluate(self.config)
-        self.artifact_manager.save_metrics(metrics)
-        self.tracker.log({
+        self.tracker.log_eval_metrics({
             "val/precision": metrics.precision,
             "val/recall": metrics.recall,
             "val/f1": metrics.f1,

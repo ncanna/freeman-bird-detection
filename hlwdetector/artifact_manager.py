@@ -64,7 +64,9 @@ class ArtifactManager:
                     )
 
             self.experiment_dir = (experiments_root / self.experiment_name).resolve()
+            self.results_dir = (self.experiment_dir / "results")
             self.experiment_dir.mkdir(parents=True, exist_ok=True)
+            self.results_dir.mkdir(parents=True, exist_ok=True)
             if original_dir is not None:
                 logger.info("Resuming %s -> new dir: %s", original_dir.name, self.experiment_dir)
                 self._stamp_resumed_in(original_dir, self.experiment_dir)

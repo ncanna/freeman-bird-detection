@@ -56,7 +56,7 @@ class MetricsComparator:
         """Load metrics from a list of experiment output directories.
 
         Args:
-            dirs: Paths to experiment output directories (each containing metrics.json).
+            dirs: Paths to experiment output directories (each containing results/eval.json).
             labels: Row labels for the table. Defaults to config_name from config.json,
                     or the directory name if config.json is absent.
         """
@@ -65,7 +65,7 @@ class MetricsComparator:
 
         for i, d in enumerate(dirs):
             d = Path(d)
-            metrics_path = d / "metrics.json"
+            metrics_path = d / "results" / "eval.json"
             config_path = d / "config.json"
 
             label = labels[i] if (labels and i < len(labels)) else None
@@ -79,7 +79,7 @@ class MetricsComparator:
                     label = d.name
 
             if not metrics_path.exists():
-                logger.warning("metrics.json not found in %s — row will be all NaN.", d)
+                logger.warning("eval.json not found in %s — row will be all NaN.", d)
                 rows.append({col: None for col in _COLUMNS})
                 resolved_labels.append(label)
                 continue

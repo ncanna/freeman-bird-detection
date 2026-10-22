@@ -20,6 +20,3 @@ total_elapsed = (time.time() - start_total) / 60
 print(f"\nTotal time elapsed: {total_elapsed:.2f} min")
 
 """
-
-runner = ExperimentRunner.from_experiment_dir("outputs/experiments/yolo26_h23_subset_20260918_104621")
-runner.adapter._save_standardized_training_metrics()

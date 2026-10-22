@@ -478,7 +478,7 @@ class DETRAdapter(BaseModelAdapter):
             )
 
             if self._tracker is not None:
-                self._tracker.log_wandb_step(epoch_metrics, step=epoch + 1)
+                self._tracker.log_train_step(epoch_metrics, step=epoch + 1)
 
             logger.info(
                 "Epoch %d/%d — loss: %.4f, lr: %.6f, val mAP50-95: %.4f, val mAP50: %.4f",
@@ -523,13 +523,6 @@ class DETRAdapter(BaseModelAdapter):
             run_dir=str(run_dir),
             best_weights_path=str(best_pt) if best_pt.exists() else None,
             last_weights_path=str(last_pt) if last_pt.exists() else None,
-            training_metrics={
-                "best_map50_95": best_metric if np.isfinite(best_metric) else None,
-                # -1 means no epoch in this run beat the checkpoint it resumed from.
-                "best_epoch": best_epoch,
-                "final_loss": avg_loss,
-                "final_lr": current_lr,
-            },
         )
         return self._training_result
 

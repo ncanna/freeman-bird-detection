@@ -1,4 +1,4 @@
-@startuml hlwdetector-c4-context
+ @startuml hlwdetector-c4-context
 ' C4 Model — Level 1: System Context
 ' hlwdetector — automated bird detection for Freeman-site camera-trap video
 
@@ -7,7 +7,7 @@
 
 LAYOUT_TOP_DOWN()
 
-title System Context — hlwdetector (Mountain Bird Lab)
+title System Context — hlwdetector ExperimentRunner
 
 ' Tune C4 element + relationship styling to the shared soft-cool
 ' palette with black text (see _theme.puml for the constants).
@@ -16,14 +16,14 @@ UpdateElementStyle("system", $sysFill, $ink, $sysLine)
 UpdateElementStyle("external_system", $extSysFill, $ink, $extSysLine)
 UpdateRelStyle($arrowText, $arrowLine)
 
-Person(researcher, "ML Researcher", "Bird Lab researcher who configures, runs, and reviews detection experiments")
+Person(researcher, "ML Researcher", "Researcher who configures, runs, and reviews detection experiments")
 
-System(hlwdetector, "hlwdetector", "ML experimentation framework that trains, tunes (Optuna HPO), evaluates, and visualizes bird-detection models (YOLO, RT-DETR, Swin+Faster R-CNN, DETR) on camera-trap footage")
+System(hlwdetector, "hlwdetector", "ML experimentation framework that trains, tunes (Optuna HPO), evaluates, and visualizes bird-detection models (YOLO, RT-DETR, DETR, Swin) on camera-trap footage")
 
 System_Ext(wandb, "Weights & Biases", "SaaS experiment tracking — metrics, artifacts, and video logging (optional)")
 System_Ext(ultralytics, "Ultralytics Model Zoo", "Source of pretrained YOLO / RT-DETR weights downloaded on first use")
 System_Ext(hfhub, "HuggingFace Hub", "Source of pretrained DETR-family checkpoints (transformers) and Swin backbones (timm)")
-System_Ext(dataset_src, "Camera-Trap Data Source", "Freeman-site videos + COCO annotations downloaded for training/eval")
+System_Ext(dataset_src, "Camera-Trap Data Source", "Freeman multi-site videos + COCO annotations downloaded for training/eval")
 
 Rel(researcher, hlwdetector, "Runs experiments & HPO studies, reviews metrics & annotated videos", "CLI / Python API")
 Rel(hlwdetector, wandb, "Logs metrics, artifacts, videos", "HTTPS")

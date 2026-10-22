@@ -23,7 +23,6 @@ class TrainingResult:
     run_dir: str
     best_weights_path: str | None
     last_weights_path: str | None
-    training_metrics: dict
 
 
 @dataclass

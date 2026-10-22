@@ -2,7 +2,7 @@ config_name: swin_h23_subset
 model_name: swin
 hyperparameters:
   backbone: swin_tiny_patch4_window7_224
-  epochs: 10
+  epochs: 3
   imgsz: 640
   batch: 4
   device: "0"

@@ -1,6 +1,6 @@
 # Freeman Bird Detection: HLW Detector
 
-A framework for running and comparing bird detection experiments on camera trap footage. Supports multiple detection models (YOLO, RT-DETR, Swin Transformer + Faster R-CNN, DETR) through a unified adapter interface, with experiment tracking, artifact management, hyperparameter optimization (Optuna), and visualization.
+A framework for running and comparing bird detection experiments on camera trap footage. Supports multiple detection architectures (YOLO, RT-DETR, DETR, Swin) through a unified adapter interface, with experiment tracking, artifact management, hyperparameter optimization (Optuna), and visualization.
 
 ## Repository Structure
 
@@ -13,17 +13,13 @@ freeman-bird-detection/
 ├── utilities/            # Data preparation and annotation conversion tools
 ├── notebooks/            # Dataset prep and tutorial notebooks
 ├── docs/                 # Architecture diagrams (PlantUML)
-├── archive/              # Legacy code — not part of the active framework
-├── detr_detector/        # Vendored Facebook DETR research repo — reference only, not wired in
-├── run_experiments.ipynb # Interactive experiment notebook
-├── run_experiments.py    # Example experiment runner script
-└── run_hpo.py            # Example HPO runner script
 ```
 
 ## Architecture
 
-The diagrams below are rendered automatically from the PlantUML sources in `docs/diagrams/`. Edit the `.puml` files — a GitHub Action ([`render-puml.yml`](.github/workflows/render-puml.yml)) re-renders the SVGs on every push, so do not edit the `.svg` files by hand.
+The diagrams below are rendered automatically from the PlantUML sources in `docs/diagrams/`.
 
+To edit: Modify the `.puml` files and a GitHub Action ([`render-puml.yml`](.github/workflows/render-puml.yml)) will re-render the SVGs on push.
 ### System Context
 
 ![System context diagram](docs/diagrams/hlwdetector-c4-context.svg)

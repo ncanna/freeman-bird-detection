@@ -247,11 +247,6 @@ class BaseModelAdapter(ABC):
         # study is running. Read only through report_epoch_to_hpo().
         self._hpo_pruning_callback = None
 
-    def log_epoch(self, epoch: int, metrics: dict) -> None:
-        """Log per-epoch metrics. Call from framework-specific callbacks in subclasses."""
-        if self._tracker is not None:
-            self._tracker.log(metrics, step=epoch)
-
     def report_epoch_to_hpo(self, epoch: int, metrics: dict) -> None:
         """Hand one epoch's metrics to the HPO pruning hook, if a study set one.
 

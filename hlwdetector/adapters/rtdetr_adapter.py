@@ -131,17 +131,10 @@ class RTDETRAdapter(BaseModelAdapter):
         if best_pt.exists():
             self._model = RTDETR(str(best_pt))
 
-        training_metrics: dict = {}
-        if hasattr(self._model.trainer, "metrics"):
-            raw = self._model.trainer.metrics
-            if isinstance(raw, dict):
-                training_metrics = {k: float(v) for k, v in raw.items() if v is not None}
-
         self._training_result = TrainingResult(
             run_dir=str(run_dir),
             best_weights_path=str(best_pt) if best_pt.exists() else None,
             last_weights_path=str(last_pt) if last_pt.exists() else None,
-            training_metrics=training_metrics,
         )
         return self._training_result
 
@@ -222,7 +215,7 @@ class RTDETRAdapter(BaseModelAdapter):
             if trainer.lr:
                 metrics.update({k: float(v) for k, v in trainer.lr.items()})
             if metrics and adapter._tracker is not None:
-                adapter._tracker.log_wandb_step(metrics, step=epoch)
+                adapter._tracker.log_train_step(metrics, step=epoch)
             adapter.report_epoch_to_hpo(epoch, metrics)  # may raise optuna.TrialPruned
 
         self._model.add_callback("on_fit_epoch_end", on_fit_epoch_end)

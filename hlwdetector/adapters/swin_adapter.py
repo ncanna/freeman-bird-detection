@@ -455,7 +455,7 @@ class SwinAdapter(BaseModelAdapter):
             )
 
             if self._tracker is not None:
-                self._tracker.log_wandb_step(epoch_metrics, step=epoch + 1)
+                self._tracker.log_train_step(epoch_metrics, step=epoch + 1)
 
             logger.info(
                 "Epoch %d/%d — loss: %.4f, lr: %.6f, val mAP50-95: %.4f, val mAP50: %.4f",
@@ -499,19 +499,10 @@ class SwinAdapter(BaseModelAdapter):
             best_ckpt = torch.load(best_pt, map_location=self._device, weights_only=False)
             self._model.load_state_dict(best_ckpt["model_state_dict"])
 
-        training_metrics = {
-            "best_map50_95": best_metric if np.isfinite(best_metric) else None,
-            # -1 means no epoch in this run beat the checkpoint it resumed from.
-            "best_epoch": best_epoch,
-            "final_loss": avg_loss,
-            "final_lr": current_lr,
-        }
-
         self._training_result = TrainingResult(
             run_dir=str(run_dir),
             best_weights_path=str(best_pt) if best_pt.exists() else None,
             last_weights_path=str(last_pt) if last_pt.exists() else None,
-            training_metrics=training_metrics,
         )
         return self._training_result
 
