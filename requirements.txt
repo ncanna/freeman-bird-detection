@@ -14,7 +14,7 @@ PytorchWildlife
 scikit-learn
 seaborn
 speciesnet
-supervision
+supervision>=0.26.0
 timm
 torch
 torchvision
