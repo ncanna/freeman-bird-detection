@@ -178,9 +178,9 @@ class VideoAnnotator:
             self._frame_map_loaded = True
 
         # Build annotators
-        self._gt_box_ann = sv.BoundingBoxAnnotator(color=gt_color, thickness=3)
+        self._gt_box_ann = sv.BoxAnnotator(color=gt_color, thickness=3)
         self._gt_label_ann = sv.LabelAnnotator(color=gt_color)
-        self._pred_box_ann = sv.BoundingBoxAnnotator(color=pred_color, thickness=2)
+        self._pred_box_ann = sv.BoxAnnotator(color=pred_color, thickness=2)
         self._pred_label_ann = sv.LabelAnnotator(color=pred_color)
 
         self._gt_color = gt_color
