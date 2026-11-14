@@ -19,9 +19,14 @@ logger = logging.getLogger(__name__)
 
 
 class HPOptimizer:
-    def __init__(self, hpo_config: str | Path):
-        # Load HPO config from YAML
-        self.config = HPOConfig.from_yaml(hpo_config)
+    def __init__(self, hpo_config: str | Path | HPOConfig):
+        # Accept an already-loaded config so callers can supply dataset paths
+        # without creating or modifying a YAML file.
+        self.config = (
+            hpo_config
+            if isinstance(hpo_config, HPOConfig)
+            else HPOConfig.from_yaml(str(hpo_config))
+        )
         # ArtifactManager owns the study output dir (and its single timestamp);
         # reuse its name as the study-run id so wandb_group == folder name.
         self.artifacts = ArtifactManager(self.config)
