@@ -30,6 +30,7 @@ hyperparameters:
     epochs: 20
     imgsz: 640
     device: "0"
+    deterministic: false
   categorical:
     batch: [8, 16]
     optimizer: [SGD, Adam, AdamW]

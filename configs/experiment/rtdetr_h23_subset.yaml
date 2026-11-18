@@ -6,6 +6,7 @@ hyperparameters:
   imgsz: 640
   batch: 8
   device: "0"
+  deterministic: false
 coco_json: data/annotations/h23_coco_subset.json
 split_json: data/splits/h23_split_subset.json
 images_dir: data/frames/h23
