@@ -16,7 +16,8 @@ main() {
   local LOCAL_USER="${LOCAL_USER:-rebecca}"
   local PACE_HOST="${PACE_HOST:-login-ice.pace.gatech.edu}"
   local PACE_BASE="${PACE_BASE:-/home/hice1/${PACE_USER}/scratch}"
-  local LOCAL_BASE="${LOCAL_BASE:-/home/${LOCAL_USER}}"
+  #local LOCAL_BASE="${LOCAL_BASE:-/home/${LOCAL_USER}}"
+  local LOCAL_BASE="${LOCAL_BASE:-/mnt/d}"
 
   # ── Parse arguments ───────────────────────
   local TO=""
@@ -74,8 +75,10 @@ main() {
     echo "  From: ${FULL_LOCAL}"
     echo "  To:   ${FULL_SCRATCH}"
     if [[ -f "${FULL_LOCAL}" ]]; then
-      # Source is a file: ensure destination directory exists on remote
-      ssh "${PACE_USER}@${PACE_HOST}" "mkdir -p '${PACE_BASE}/$(dirname "${SCRATCH_PATH}")'"
+      # Source is a file: --scratchpath names a directory; create it and use a
+      # trailing slash so rsync puts the file inside it instead of renaming it.
+      ssh "${PACE_USER}@${PACE_HOST}" "mkdir -p '${PACE_BASE}/${SCRATCH_PATH}'"
+      FULL_SCRATCH="${FULL_SCRATCH%/}/"
     fi
     rsync -avz --progress "${FULL_LOCAL}" "${FULL_SCRATCH}"
 

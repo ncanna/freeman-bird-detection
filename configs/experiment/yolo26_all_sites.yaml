@@ -1,0 +1,13 @@
+config_name: yolo26_all_sites
+model_name: yolo
+model_weights: yolo26n.pt
+hyperparameters:
+  epochs: 100
+  imgsz: 640
+  batch: 16
+  device: "0"
+coco_json: data/annotations/master_coco.json
+split_json: data/splits/master_split.json
+images_dir: data/frames
+output_dir: outputs
+wandb_project: bird-detection
